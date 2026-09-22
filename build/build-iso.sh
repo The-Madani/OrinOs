@@ -25,6 +25,21 @@ done
 
 mkdir -p "${OUT_DIR}" "${WORK_DIR}"
 
+# mkarchiso caches each build step behind marker files in the work dir and
+# does not invalidate them when the package list changes. A stale work dir
+# therefore silently produces an ISO with the OLD package list.
+PKG_LIST="${PROFILE}/packages.$(uname -m)"
+if [[ -f "${PKG_LIST}" && -f "${WORK_DIR}/base._make_packages" ]]; then
+    if [[ "${PKG_LIST}" -nt "${WORK_DIR}/base._make_packages" ]]; then
+        cat >&2 <<EOF
+warning: ${PKG_LIST} changed since the last build but the work dir still
+warning: holds markers from the old package list. If the new ISO is missing
+warning: packages, wipe the cache and rebuild:
+warning:   rm -rf ${WORK_DIR} && $(basename "$0") $*
+EOF
+    fi
+fi
+
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "${SCRIPT_DIR}/.." log -1 --pretty=%ct)}"
 
 echo "==> profile:        ${PROFILE}"
