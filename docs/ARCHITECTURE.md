@@ -57,6 +57,12 @@ maintenance commitment and is decided case by case).
   keyring (the Arch keyring is still required to verify upstream packages).
 - **Branding** — name, logo, artwork, boot themes, release process.
 
+**Infrastructure — DECIDED (Phase 2):** all infrastructure uses free
+services — GitHub for git, CI (GitHub Actions) and ISO distribution
+(Releases); GitHub Pages for serving the `[orinos]` pacman repository (a
+pacman repo is just static files). No paid hosting, no custom domain; URLs
+point to `github.com/The-Madani/OrinOs` unless a domain is acquired later.
+
 ## 3. Package management — DECIDED (with a deferred component)
 
 **Current state (until the OrinOs repository exists):** stock pacman against
@@ -77,6 +83,10 @@ hosting:**
   must be signed with the OrinOs key, never `TrustAll`.
 - The OrinOs signing key is provided to installed systems via an
   `orinos-keyring` package (hypothetical name; final naming in Phase 4).
+- **DECIDED (Phase 2):** packages that exist only in the AUR but are wanted
+  in the default installation (first case: `yay`) will be built and published
+  in the `[orinos]` repository. This is the repository's first real use case;
+  `yay` lands in the ISO once the repository exists (Phase 4).
 
 **Hosting — TO BE EVALUATED:** a pacman repository is only static files
 (database + packages + signatures), so static hosting (e.g. GitHub Pages) is
@@ -214,6 +224,8 @@ Most of the distribution's identity is **configuration, not code**:
 - Controllable with files/overlays: `os-release`, default locale/keymap/
   timezone, MOTD, skeleton files, enabled services (symlinks in airootfs),
   boot menu entries, package lists, the installed system's `pacman.conf`.
+  The live system's default shell (fish) is also pure overlay configuration
+  (`passwd` + package list entry).
 - Requiring actual code: the installer, any first-boot logic, build and CI
   scripts, and PKGBUILDs for OrinOs packages.
 
