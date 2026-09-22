@@ -1,0 +1,18 @@
+# Build artifacts
+work/
+out/
+*.iso
+
+# Personal environment files (not part of the project)
+/.bash_profile
+/.bashrc
+/.gitconfig
+/.gitmodules
+/.mcp.json
+/.profile
+/.ripgreprc
+/.zprofile
+/.zshrc
+/.idea
+/.vscode
+/.claude/
