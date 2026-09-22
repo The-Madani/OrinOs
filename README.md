@@ -1,5 +1,7 @@
 # OrinOs
 
+English | [فارسی](README.fa.md)
+
 OrinOs is an independent Arch-based Linux distribution that uses Arch Linux
 as its upstream.
 
