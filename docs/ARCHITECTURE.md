@@ -151,10 +151,27 @@ in QEMU with BIOS (`run_archiso -i file.iso`) or UEFI
 Automated CI boot testing (headless QEMU, checking the system reaches a login
 prompt) is planned for Phase 7 — PROVISIONAL until designed.
 
-## 6. Graphical installer — TO BE EVALUATED
+## 6. Graphical installer — TO BE EVALUATED (decision pending PoC)
 
-No decision has been made. Phase 6 will run a proof-of-concept and
-compatibility evaluation for each candidate before choosing.
+Phase 6 evaluation is in progress; findings and the PoC plan are tracked in
+[INSTALLER-EVALUATION.md](INSTALLER-EVALUATION.md). Key facts found so far:
+
+- archinstall (4.4) is packaged in `[extra]`; Calamares is **not** packaged
+  in any official Arch repository, so choosing Calamares would require
+  permanently building and maintaining it in `[orinos]`.
+- archinstall 4.x has first-class custom-repository support
+  (`CustomRepository`, `MirrorConfiguration.repositories_config()`), making
+  `[orinos]` integration a documented code path.
+
+**Provisional ranking:** 1) archinstall as a library + OrinOs' own GUI
+frontend (Qt/PySide), 2) Calamares as fallback, 3) independent installer.
+
+**Install mode — DECIDED (Phase 6): online installation.** The installer
+pulls all packages at install time from the Arch repositories plus
+`[orinos]`. Rationale: Arch is rolling, so an offline ISO is frozen at build
+time; `[orinos]` is already network-served (GitHub Pages), so the installer
+and the installed system use the same path. An offline build mode may be
+added later as a separate, optional mode; it is out of scope for now.
 
 ### Candidate A: custom frontend on top of archinstall as a library
 
