@@ -1,0 +1,25 @@
+{
+  "logo": {
+    "type": "file",
+    "source": "orinos.ascii"
+  },
+  "modules": [
+    "title",
+    "separator",
+    "os",
+    "host",
+    "kernel",
+    "uptime",
+    "packages",
+    "shell",
+    "terminal",
+    "cpu",
+    "gpu",
+    "memory",
+    "swap",
+    "disk",
+    "localip",
+    "break",
+    "colors"
+  ]
+}
