@@ -1,7 +1,7 @@
 {
   "logo": {
     "type": "file",
-    "source": "orinos.ascii"
+    "source": "/etc/fastfetch/orinos.ascii"
   },
   "modules": [
     "title",
