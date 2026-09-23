@@ -1,0 +1,9 @@
+NAME="OrinOs"
+PRETTY_NAME="OrinOs (PoC install)"
+ID=orinos
+BUILD_ID=rolling
+ANSI_COLOR="0;38;2;0;180;170"
+HOME_URL="https://github.com/The-Madani/OrinOs"
+DOCUMENTATION_URL="https://github.com/The-Madani/OrinOs"
+SUPPORT_URL="https://github.com/The-Madani/OrinOs"
+BUG_REPORT_URL="https://github.com/The-Madani/OrinOs/issues"

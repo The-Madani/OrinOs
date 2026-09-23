@@ -2,6 +2,7 @@
 work/
 out/
 *.iso
+__pycache__/
 
 # Personal environment files (not part of the project)
 /.bash_profile

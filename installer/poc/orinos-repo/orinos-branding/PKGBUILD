@@ -1,0 +1,16 @@
+# Maintainer: OrinOs <https://github.com/The-Madani/OrinOs>
+
+pkgname=orinos-branding
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="OrinOs distribution identity files (PoC)"
+arch=('any')
+license=('GPL-3.0-only')
+backup=('etc/os-release')
+source=("os-release" "issue")
+sha256sums=('SKIP' 'SKIP')
+
+package() {
+    install -Dm644 "${srcdir}/os-release" "${pkgdir}/etc/os-release"
+    install -Dm644 "${srcdir}/issue" "${pkgdir}/etc/issue"
+}
