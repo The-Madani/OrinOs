@@ -3,6 +3,7 @@ work/
 out/
 *.iso
 __pycache__/
+*.qcow2
 
 # Personal environment files (not part of the project)
 /.bash_profile
