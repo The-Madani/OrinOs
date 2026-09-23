@@ -1,6 +1,7 @@
 # OrinOs Architecture
 
-Status: Phase 1 (architecture definition)
+Status: Phase 5 complete (branding verified in VM). Phase 6 (installer
+evaluation) is next.
 
 OrinOs is an independent Arch-based Linux distribution that uses Arch Linux
 as its upstream.
