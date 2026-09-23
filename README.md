@@ -43,3 +43,13 @@ are created together with their first real files in their respective phases.
 Building the ISO requires Arch Linux with `archiso` installed; testing
 requires `qemu` and `edk2-ovmf`. Exact tooling and instructions will be
 documented as each phase lands.
+
+## License
+
+OrinOs is free and open-source software. All code and configuration in this
+repository is licensed under the [GNU GPL v3](LICENSE). The brand assets in
+`branding/` (logo, wordmark, wallpapers) are not covered by the GPL; see
+`branding/LICENSE-BRAND.md` for their usage terms.
+
+OrinOs is not affiliated with, endorsed by, or a fork of Arch Linux. "Arch
+Linux" is a trademark of Arch Linux PKG.
