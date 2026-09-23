@@ -1,0 +1,8 @@
+NAME="OrinOs"
+PRETTY_NAME="OrinOs"
+ID=orinos
+BUILD_ID=rolling
+ANSI_COLOR="38;2;255;161;0"
+HOME_URL="https://github.com/The-Madani/OrinOs"
+SUPPORT_URL="https://github.com/The-Madani/OrinOs/issues"
+BUG_REPORT_URL="https://github.com/The-Madani/OrinOs/issues"
