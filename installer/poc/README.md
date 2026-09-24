@@ -26,6 +26,15 @@ build-repo.sh              builds the PoC [orinos] repo from orinos-repo/
 orinos-repo/               PKGBUILDs published in the PoC repo
 ```
 
+## PoC status — PASSED (2026-09-24)
+
+The full flow was verified in a virt-manager/KVM VM: online install of
+base + Plasma + sddm + fish + `orinos-branding` from the locally served
+`[orinos]` repo; the installed system booted via GRUB into SDDM/Plasma with
+`os-release` reporting OrinOs and fish as the user's shell. Findings and
+fixes are recorded in
+[docs/INSTALLER-EVALUATION.md](../../docs/INSTALLER-EVALUATION.md).
+
 ## Test procedure (host = Arch machine, test in a VM only)
 
 Prerequisites on the host: `makepkg`, `repo-add` (base-devel), `qemu`

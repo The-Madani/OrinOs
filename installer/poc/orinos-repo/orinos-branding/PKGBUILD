@@ -1,16 +1,32 @@
 # Maintainer: OrinOs <https://github.com/The-Madani/OrinOs>
 
 pkgname=orinos-branding
-pkgver=0.1.0
+pkgver=0.3.1
 pkgrel=1
 pkgdesc="OrinOs distribution identity files (PoC)"
 arch=('any')
 license=('GPL-3.0-only')
-backup=('etc/os-release')
-source=("os-release" "issue")
-sha256sums=('SKIP' 'SKIP')
+backup=('etc/os-release' 'etc/issue')
+source=("os-release" "issue" "orinos-branding.conf" "orinos.ascii" "config.jsonc" "config.fish")
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
-    install -Dm644 "${srcdir}/os-release" "${pkgdir}/etc/os-release"
-    install -Dm644 "${srcdir}/issue" "${pkgdir}/etc/issue"
+    # /etc/os-release, /etc/issue and even /usr/share/factory/etc/* are
+    # owned by the "filesystem" package; shipping files there would conflict.
+    # Ship them under /usr/share/orinos-branding/ and place them with a
+    # systemd-tmpfiles rule instead.
+    install -Dm644 "${srcdir}/os-release" "${pkgdir}/usr/share/orinos-branding/os-release"
+    install -Dm644 "${srcdir}/issue" "${pkgdir}/usr/share/orinos-branding/issue"
+
+    install -Dm644 "${srcdir}/orinos-branding.conf" \
+        "${pkgdir}/etc/tmpfiles.d/orinos-branding.conf"
+
+    # fastfetch: the OrinOs ASCII logo + a config pointing at it, for any
+    # user without their own ~/.config/fastfetch/config.jsonc.
+    install -Dm644 "${srcdir}/orinos.ascii" "${pkgdir}/etc/fastfetch/orinos.ascii"
+    install -Dm644 "${srcdir}/config.jsonc" \
+        "${pkgdir}/etc/xdg/fastfetch/config.jsonc"
+
+    # Short, quiet fish config (clears the verbose default greeting).
+    install -Dm644 "${srcdir}/config.fish" "${pkgdir}/etc/fish/conf.d/orinos.fish"
 }

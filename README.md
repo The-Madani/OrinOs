@@ -11,38 +11,43 @@ ISO, a distribution configuration, a graphical installer, its own package
 repository and branding — while installed systems keep updating with
 `pacman -Syu` from the Arch repositories plus the OrinOs repository.
 
-**Status:** early architecture phase. There is no ISO, installer or package
-repository yet. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the
-architecture, decision statuses (DECIDED / PROVISIONAL / TO BE EVALUATED)
-and the phase roadmap.
+**Status:** Phases 1–6 complete. A bootable live ISO exists
+(`profiles/orinos-live/`, built with `archiso`), and the installer backend
+was verified end-to-end in a VM: an online install of a full Plasma desktop
+with the first OrinOs package from the `[orinos]` repository. The graphical
+installer frontend (Phase 6 follow-up) is the next deliverable. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the architecture, decision
+statuses (DECIDED / PROVISIONAL / TO BE EVALUATED) and the phase roadmap,
+and [installer/poc/README.md](installer/poc/README.md) to reproduce the
+installer proof-of-concept.
 
 ## Layout
 
 ```
-docs/       Architecture and project documentation
+docs/                 Architecture and project documentation
+profiles/orinos-live/ archiso live ISO profile (Phase 2)
+branding/             Brand assets (Phase 5)
+installer/poc/        Installer PoC: archinstall-as-library + [orinos] repo (Phase 6)
 ```
-
-Further directories (`profiles/`, `build/`, `packages/`, `installer/`, `ci/`)
-are created together with their first real files in their respective phases.
 
 ## Roadmap
 
-1. Architecture definition ← current
-2. Minimal ISO
-3. Boot testing
-4. Distribution configuration
-5. Branding
-6. Graphical installer (evaluation: archinstall library vs Calamares)
+1. ~~Architecture definition~~
+2. ~~Minimal ISO~~
+3. ~~Boot testing~~
+4. ~~Distribution configuration~~
+5. ~~Branding~~
+6. ~~Installer evaluation + PoC (archinstall library — PASSED)~~ ← graphical installer frontend next
 7. Automated testing
 8. CI/CD
 9. First public release
 10. Long-term maintenance
 
-## Requirements (for later phases)
+## Requirements
 
 Building the ISO requires Arch Linux with `archiso` installed; testing
-requires `qemu` and `edk2-ovmf`. Exact tooling and instructions will be
-documented as each phase lands.
+requires a VM (`virt-manager`/`qemu` with `edk2-ovmf`). Building the PoC
+repository requires `makepkg`/`repo-add` (`base-devel`).
 
 ## License
 

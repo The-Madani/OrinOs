@@ -1,6 +1,7 @@
 # Phase 6 — Installer Evaluation
 
-Status: evaluation in progress. Final decision after PoC in VM.
+Status: **complete — DECIDED (2026-09-24): archinstall as a library +
+OrinOs GUI frontend.** The PoC passed end-to-end in a VM; see section 7.
 
 This document records the Phase 6 evaluation of installer candidates per
 section 6 of [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -63,7 +64,7 @@ From `archinstall/lib/mirror/mirror_handler.py` and `models/mirrors.py`
    during the PoC.
 3. Independent installer — unchanged (last resort).
 
-## 6. PoC plan (next step)
+## 6. PoC plan
 
 Build a minimal PoC, `installer/poc/`, that in a VM performs:
 
@@ -78,3 +79,52 @@ Build a minimal PoC, `installer/poc/`, that in a VM performs:
 Score the result on: fit with Arch upstream, maintenance burden, branding
 capability, installer quality. Decision (DECIDED status) is recorded in
 ARCHITECTURE.md section 6 after the PoC.
+
+## 7. PoC result — PASSED (2026-09-24)
+
+`installer/poc/install.py` ran against the OrinOs live ISO in a
+virt-manager/KVM VM (40 GiB VirtIO disk, online install):
+
+**What was proven**
+
+- archinstall 4.4 library flow end-to-end: partitioning (512 MiB ESP on
+  `/boot` + ext4 root), pacstrap of base + Plasma + sddm + fish +
+  `orinos-branding` from the locally served `[orinos]` repo
+  (`CustomRepository` path), GRUB bootloader, NetworkManager + sddm
+  enabled, sudo user created.
+- Installed system booted from disk (no ISO) into GRUB → SDDM → a working
+  Plasma 6 session; `os-release` reported **OrinOs**; the user's login
+  shell was **fish**.
+
+**Bugs found and fixed during the PoC (all in `installer/poc/`)**
+
+| Bug | Fix |
+|---|---|
+| `Size(512, Unit.MiB)` — archinstall 4.4 requires `sector_size` | Build sizes with the target device's `sector_size` |
+| `plasma-applications` does not exist | Package group `plasma` |
+| `orinos-branding` was defined in the repo but never requested | Added to the install package list |
+| `/etc/issue` owned by `filesystem` → pacman conflict | Ship under `/usr/share/orinos-branding/`, place via `/etc/tmpfiles.d/` rule (`L+`) — `/usr/lib/tmpfiles.d/` is shadowed by Arch's `etc.conf` and a `C+` rule is ignored on Arch's symlink |
+| os-release/issue not applied by package install | `systemd-tmpfiles --create /etc/tmpfiles.d/orinos-branding.conf` from the installer |
+| GRUB menu said "Arch Linux" / then "Linux" | `GRUB_DISTRIBUTOR="OrinOs"` written before `add_bootloader` |
+| ESP not in fstab → `/boot` empty after reboot | `PartitionFlag.ESP` alongside `BOOT` on the ESP partition |
+| User shell was bash | `usermod -s /usr/bin/fish` after `create_users` (archinstall `User` has no shell field) |
+| Live ISO lacked mirrorlist / keyring init / archinstall | Profile now ships a default mirrorlist, a `pacman-key-init.service` (init + populate at boot) and `archinstall` in `packages.x86_64` |
+| fastfetch showed default logo; fish printed a greeting | `orinos-branding` now ships the fastfetch logo + `/etc/xdg/fastfetch/config.jsonc` and `/etc/fish/conf.d/orinos.fish` |
+
+**Known noise, fixed in code, to be re-verified on the next ISO build**
+
+- `could not register 'orinos' database (database already registered)`
+  warnings during install: archinstall writes the custom-repo block more
+  than once; harmless but to be silenced in the GUI installer phase.
+- Host-side test-environment issues (Docker's iptables `FORWARD DROP`
+  breaking libvirt NAT; vnet re-attachment after `net-destroy`) are
+  environment-only, not OrinOs bugs.
+
+**Score** — fit with Arch upstream: excellent (same backend Arch itself
+uses). Maintenance burden: low (confined to documented top-level APIs).
+Branding capability: full (our frontend + our packages). Installer
+quality: backend proven; UX is our own work in the next phase.
+
+**Decision:** archinstall-as-library + OrinOs GUI frontend (PySide6).
+Calamares remains the documented fallback. Next step: build the graphical
+frontend on `installer/poc/install.py`'s verified code path.

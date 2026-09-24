@@ -58,35 +58,38 @@ BASE_PACKAGES = [
     'sudo',
     'fish',
     'plasma-meta',
-    'plasma-applications',
+    'plasma',
     'konsole',
     'dolphin',
     'sddm',
     'fastfetch',
+    'orinos-branding',
 ]
-
-ESP_SIZE = Size(512, Unit.MiB)
-
 
 def create_disk_layout(disk_path: Path) -> DiskLayoutConfiguration:
     device = device_handler.get_device(disk_path)
     if not device:
         raise ValueError(f'No device found for {disk_path}')
 
+    sector_size = device.device_info.sector_size
+    esp_size = Size(512, Unit.MiB, sector_size)
+
     modification = DeviceModification(device, wipe=True)
 
     esp = PartitionModification(
         status=ModificationStatus.CREATE,
         type=PartitionType.PRIMARY,
-        start=Size(1, Unit.MiB, device.device_info.sector_size),
-        length=ESP_SIZE,
+        start=Size(1, Unit.MiB, sector_size),
+        length=esp_size,
         mountpoint=Path('/boot'),
         fs_type=FilesystemType.FAT32,
-        flags=[PartitionFlag.BOOT],
+        # ESP flag makes archinstall mount the ESP in the target's fstab;
+        # without it /boot stays unmounted after the first reboot.
+        flags=[PartitionFlag.BOOT, PartitionFlag.ESP],
     )
     modification.add_partition(esp)
 
-    root_start = Size(1, Unit.MiB, device.device_info.sector_size) + ESP_SIZE
+    root_start = Size(1, Unit.MiB, sector_size) + esp_size
     root = PartitionModification(
         status=ModificationStatus.CREATE,
         type=PartitionType.PRIMARY,
@@ -153,6 +156,12 @@ def main() -> None:
         installation.enable_service('NetworkManager.service')
         installation.enable_service('sddm.service')
 
+        # GRUB names its menu entry from GRUB_DISTRIBUTOR (not os-release);
+        # set it before add_bootloader so grub-mkconfig writes "OrinOs".
+        installation.arch_chroot(
+            'sed -i \'s/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="OrinOs"/\' /etc/default/grub'
+        )
+
         installation.add_bootloader(Bootloader.Grub)
 
         installation.create_users(
@@ -161,6 +170,18 @@ def main() -> None:
                 password=Password(plaintext=password),
                 sudo=True,
             ),
+        )
+
+        # archinstall's User model has no shell field and useradd defaults
+        # to bash; fish is in BASE_PACKAGES so make it the login shell.
+        installation.arch_chroot(f'usermod -s /usr/bin/fish {username}')
+
+        # orinos-branding places /etc/os-release + /etc/issue via a rule in
+        # /etc/tmpfiles.d (higher precedence than Arch's /usr/lib rule, which
+        # would otherwise be treated as duplicate). The explicit path applies
+        # the rule immediately; at boot systemd applies it anyway.
+        installation.arch_chroot(
+            'systemd-tmpfiles --create /etc/tmpfiles.d/orinos-branding.conf'
         )
 
     print('PoC install finished. Check for warnings above, then reboot.')

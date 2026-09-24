@@ -1,7 +1,8 @@
 # OrinOs Architecture
 
-Status: Phase 5 complete (branding verified in VM). Phase 6 (installer
-evaluation) is next.
+Status: Phase 6 PoC passed (installer backend verified end-to-end in a VM).
+Phase 7 (automated testing) is next; the graphical installer frontend is
+built on the verified archinstall library path.
 
 OrinOs is an independent Arch-based Linux distribution that uses Arch Linux
 as its upstream.
@@ -151,20 +152,21 @@ in QEMU with BIOS (`run_archiso -i file.iso`) or UEFI
 Automated CI boot testing (headless QEMU, checking the system reaches a login
 prompt) is planned for Phase 7 — PROVISIONAL until designed.
 
-## 6. Graphical installer — TO BE EVALUATED (decision pending PoC)
+## 6. Graphical installer — DECIDED (Phase 6): archinstall as a library + OrinOs GUI frontend
 
-Phase 6 evaluation is in progress; findings and the PoC plan are tracked in
-[INSTALLER-EVALUATION.md](INSTALLER-EVALUATION.md). Key facts found so far:
+The Phase 6 evaluation is complete. Findings are tracked in
+[INSTALLER-EVALUATION.md](INSTALLER-EVALUATION.md); the PoC
+(`installer/poc/`) passed end-to-end in a VM on 2026-09-24:
 
-- archinstall (4.4) is packaged in `[extra]`; Calamares is **not** packaged
-  in any official Arch repository, so choosing Calamares would require
-  permanently building and maintaining it in `[orinos]`.
-- archinstall 4.x has first-class custom-repository support
-  (`CustomRepository`, `MirrorConfiguration.repositories_config()`), making
-  `[orinos]` integration a documented code path.
+- Online install of `base`, kernel, Plasma, sddm, fish and the first
+  `[orinos]` package (`orinos-branding`) via archinstall 4.4 used as a
+  library, from a locally served `[orinos]` repository.
+- Installed system booted via GRUB into an SDDM login and a working Plasma
+  session; `os-release` reported OrinOs; the created user's shell was fish.
 
-**Provisional ranking:** 1) archinstall as a library + OrinOs' own GUI
-frontend (Qt/PySide), 2) Calamares as fallback, 3) independent installer.
+Calamares remains documented as the fallback only (section "Candidate B"
+below). Decisive facts: archinstall is packaged in `[extra]` (zero packaging
+burden) while Calamares is absent from all official Arch repositories.
 
 **Install mode — DECIDED (Phase 6): online installation.** The installer
 pulls all packages at install time from the Arch repositories plus
@@ -172,6 +174,20 @@ pulls all packages at install time from the Arch repositories plus
 time; `[orinos]` is already network-served (GitHub Pages), so the installer
 and the installed system use the same path. An offline build mode may be
 added later as a separate, optional mode; it is out of scope for now.
+
+**PoC findings now fixed in the profile/installer (Phase 6):**
+
+- The live ISO ships a default mirrorlist, a `pacman-key` init service
+  (init + populate at boot, mirroring the official Arch ISO) and
+  `archinstall` itself.
+- `orinos-branding` ships identity files under `/usr/share/orinos-branding/`
+  and places them via a rule in `/etc/tmpfiles.d/` (a direct copy would
+  conflict with the `filesystem` package; a `/usr/lib/tmpfiles.d/` rule is
+  shadowed by Arch's own `etc.conf`). The same package ships the fastfetch
+  logo/config and a fish `conf.d` snippet (no login greeting).
+- The installer sets `GRUB_DISTRIBUTOR="OrinOs"` before bootloader
+  installation and forces fish as the created user's shell (archinstall's
+  `User` model has no shell field).
 
 ### Candidate A: custom frontend on top of archinstall as a library
 

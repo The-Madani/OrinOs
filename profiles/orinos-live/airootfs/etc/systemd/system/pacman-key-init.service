@@ -1,0 +1,10 @@
+[Unit]
+Description=Initialize pacman keyring for OrinOs live medium
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/pacman-key --init
+ExecStart=/usr/bin/pacman-key --populate archlinux
+
+[Install]
+WantedBy=multi-user.target
