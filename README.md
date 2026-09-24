@@ -18,8 +18,8 @@ with the first OrinOs package from the `[orinos]` repository. The graphical
 installer frontend (Phase 6 follow-up) is the next deliverable. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the architecture, decision
 statuses (DECIDED / PROVISIONAL / TO BE EVALUATED) and the phase roadmap,
-and [installer/poc/README.md](installer/poc/README.md) to reproduce the
-installer proof-of-concept.
+and [installer/README.md](installer/README.md) to reproduce the
+installer verification.
 
 ## Layout
 
@@ -27,7 +27,8 @@ installer proof-of-concept.
 docs/                 Architecture and project documentation
 profiles/orinos-live/ archiso live ISO profile (Phase 2)
 branding/             Brand assets (Phase 5)
-installer/poc/        Installer PoC: archinstall-as-library + [orinos] repo (Phase 6)
+installer/            Installer: archinstall-as-library + [orinos] repo (Phase 6)
+packages/             OrinOs package sources (PKGBUILDs)
 ```
 
 ## Roadmap

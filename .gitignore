@@ -5,9 +5,9 @@ out/
 __pycache__/
 *.qcow2
 *.pkg.tar.zst
-installer/poc/orinos-repo/orinos-branding/pkg/
-installer/poc/orinos-repo/orinos-branding/src/
-installer/poc/os/
+packages/*/pkg/
+packages/*/src/
+packages/os/
 .mcp.json
 
 # Personal environment files (not part of the project)

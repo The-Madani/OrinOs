@@ -66,7 +66,7 @@ From `archinstall/lib/mirror/mirror_handler.py` and `models/mirrors.py`
 
 ## 6. PoC plan
 
-Build a minimal PoC, `installer/poc/`, that in a VM performs:
+Build a minimal installer script, `installer/`, that in a VM performs:
 
 1. Partitioning (single-disk ESP + root, ext4 — same layout as the scripted
    example).
@@ -82,7 +82,7 @@ ARCHITECTURE.md section 6 after the PoC.
 
 ## 7. PoC result — PASSED (2026-09-24)
 
-`installer/poc/install.py` ran against the OrinOs live ISO in a
+`installer/install.py` ran against the OrinOs live ISO in a
 virt-manager/KVM VM (40 GiB VirtIO disk, online install):
 
 **What was proven**
@@ -96,7 +96,8 @@ virt-manager/KVM VM (40 GiB VirtIO disk, online install):
   Plasma 6 session; `os-release` reported **OrinOs**; the user's login
   shell was **fish**.
 
-**Bugs found and fixed during the PoC (all in `installer/poc/`)**
+**Bugs found and fixed during the verification (all in `installer/` and
+`packages/`)**
 
 | Bug | Fix |
 |---|---|
@@ -127,4 +128,4 @@ quality: backend proven; UX is our own work in the next phase.
 
 **Decision:** archinstall-as-library + OrinOs GUI frontend (PySide6).
 Calamares remains the documented fallback. Next step: build the graphical
-frontend on `installer/poc/install.py`'s verified code path.
+frontend on `installer/install.py`'s verified code path.

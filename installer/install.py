@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OrinOs Phase 6 PoC — archinstall-as-library install script.
+"""OrinOs installer backend — archinstall-as-library install script.
 
 Runs inside the live ISO (or any Arch live environment with archinstall
 installed). It installs OrinOs onto /dev/sda with:

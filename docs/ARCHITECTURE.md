@@ -156,7 +156,7 @@ prompt) is planned for Phase 7 — PROVISIONAL until designed.
 
 The Phase 6 evaluation is complete. Findings are tracked in
 [INSTALLER-EVALUATION.md](INSTALLER-EVALUATION.md); the PoC
-(`installer/poc/`) passed end-to-end in a VM on 2026-09-24:
+(`installer/`) passed end-to-end in a VM on 2026-09-24:
 
 - Online install of `base`, kernel, Plasma, sddm, fish and the first
   `[orinos]` package (`orinos-branding`) via archinstall 4.4 used as a

@@ -1,14 +1,14 @@
-# Phase 6 Installer PoC
+# OrinOs Installer
 
-Proof-of-concept for the OrinOs graphical installer evaluation. This PoC
-proves the **backend path** (archinstall as a library + the `[orinos]`
-custom repository) end-to-end; the graphical frontend is layered on top of
-this same code path once the PoC passes.
+Installs OrinOs onto a target disk using archinstall's documented library
+APIs (the Phase 6 decision — see
+[docs/INSTALLER-EVALUATION.md](../docs/INSTALLER-EVALUATION.md)). This is
+the verified backend the graphical installer frontend will be built on.
 
 ## What it does
 
 `install.py` (running inside the live environment, as root) installs OrinOs
-onto a target disk using archinstall's documented library APIs:
+onto a target disk with:
 
 1. Partitioning: ESP (512 MiB, `/boot`) + ext4 root, whole-disk wipe.
 2. `[orinos]` custom repository via `MirrorConfiguration` /
@@ -21,19 +21,19 @@ onto a target disk using archinstall's documented library APIs:
 ## Files
 
 ```
-install.py                 archinstall library install script
-build-repo.sh              builds the PoC [orinos] repo from orinos-repo/
-orinos-repo/               PKGBUILDs published in the PoC repo
+install.py                     archinstall library install script
+../packages/                   OrinOs package sources (PKGBUILDs)
+../packages/build-repo.sh      builds the [orinos] repo from ../packages/
 ```
 
-## PoC status — PASSED (2026-09-24)
+## Status — backend verified (2026-09-24)
 
 The full flow was verified in a virt-manager/KVM VM: online install of
 base + Plasma + sddm + fish + `orinos-branding` from the locally served
 `[orinos]` repo; the installed system booted via GRUB into SDDM/Plasma with
 `os-release` reporting OrinOs and fish as the user's shell. Findings and
 fixes are recorded in
-[docs/INSTALLER-EVALUATION.md](../../docs/INSTALLER-EVALUATION.md).
+[docs/INSTALLER-EVALUATION.md](../docs/INSTALLER-EVALUATION.md).
 
 ## Test procedure (host = Arch machine, test in a VM only)
 
@@ -41,8 +41,8 @@ Prerequisites on the host: `makepkg`, `repo-add` (base-devel), `qemu`
 desktop with KVM, and the built OrinOs live ISO.
 
 ```bash
-# 1. Build the PoC repository
-./build-repo.sh
+# 1. Build the [orinos] repository
+cd ../packages && ./build-repo.sh
 
 # 2. Serve it (note the port, default 8000)
 python3 -m http.server 8000 --directory os
