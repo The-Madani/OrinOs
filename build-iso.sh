@@ -73,6 +73,18 @@ cp "${REPO_ROOT}/packages/os/x86_64/orinos.db.tar.gz" "${EMBED_DIR}/x86_64/"
 # host cache and leaves nothing in the airootfs, so the medium ships no
 # packages of its own unless they are embedded here. The cache has to be built
 # before the profile is assembled, because it lives inside the profile tree.
+#
+# Fetching needs write access to /var/cache/pacman/pkg, which on a stock
+# Arch host means root; copying the files out of that cache needs none. The
+# fetch step is therefore retried under sudo, and only the collect step runs
+# unprivileged.
+if ! "${REPO_ROOT}/build-offline-cache.py" --fetch-only "${MODE}"; then
+    echo "==> Retrying the download with sudo"
+    sudo "${REPO_ROOT}/build-offline-cache.py" --fetch-only "${MODE}" || {
+        echo "==> Could not download the packages needed for offline install." >&2
+        exit 1
+    }
+fi
 "${REPO_ROOT}/build-offline-cache.py" "${MODE}" || {
     echo "==> Offline cache incomplete; the ISO would not install offline." >&2
     exit 1

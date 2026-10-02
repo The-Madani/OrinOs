@@ -25,7 +25,10 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
-MODE = sys.argv[1] if len(sys.argv) > 1 else 'desktop'
+
+args = [a for a in sys.argv[1:] if a != '--fetch-only']
+FETCH_ONLY = '--fetch-only' in sys.argv[1:]
+MODE = args[0] if args else 'desktop'
 
 PROFILE = REPO_ROOT / 'profiles' / MODE
 if not PROFILE.is_dir():
@@ -133,8 +136,20 @@ def fetch(packages: list) -> None:
         return
     print(f"==> Downloading {len(packages)} packages into the host cache")
     # -w downloadonly, -y refresh the databases first so names resolve.
-    subprocess.run(['pacman', '-Sw', '--noconfirm', '--needed', *packages],
-                   check=False)
+    proc = subprocess.run(
+        ['pacman', '-Syw', '--noconfirm', '--needed', *packages],
+        capture_output=True, text=True)
+    if proc.returncode != 0:
+        # pacman needs write access to the cache and the sync databases, and
+        # downloads as DownloadUser when one is configured. Without root it
+        # fails with a message that says nothing about which package list
+        # caused it, so surface the cause here instead.
+        detail = (proc.stderr or proc.stdout).strip().splitlines()
+        reason = detail[-1] if detail else f'exit {proc.returncode}'
+        sys.exit(
+            f'Could not download {len(packages)} packages: {reason}\n'
+            'pacman needs root to write to the package cache (try: sudo '
+            'python3 build-offline-cache.py).')
 
 
 def main() -> int:
@@ -164,6 +179,17 @@ def main() -> int:
     # Anything reachable but absent from the cache has to be fetched, because
     # a stale cache would otherwise produce an ISO that cannot install.
     fetch(sorted(n for n in unresolved if not is_ours(n)))
+
+    if FETCH_ONLY:
+        # First half of a split run (build-iso.sh calls it without root, then
+        # with root, then runs this again to collect the files). Resolving the
+        # closure again here is what lets the second run see the newly fetched
+        # packages, whose own dependencies may pull in further files.
+        if not any(index_cache(cache).get(n) for n in unresolved):
+            missing = sorted(n for n in unresolved if not is_ours(n))
+            sys.exit('download failed; still missing: ' + ', '.join(missing))
+        print('==> Fetch complete')
+        return 0
 
     # Re-index: fetching added packages, which may bring in new dependencies
     # of their own that were not in the closure before.
