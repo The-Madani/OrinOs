@@ -36,6 +36,7 @@ pacman.conf keeps consuming the [orinos] repository after reboot.
 import json
 import shlex
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -82,6 +83,8 @@ BASE_PACKAGES = [
     # Wallpaper + colour scheme. Installed in the base set so it lands in
     # every installation, not only the full-desktop variant.
     'orinos-desktop',
+    # Needed by the encrypt hook below and by 'systemctl enable' targets.
+    'cryptsetup',
 ]
 
 DESKTOP_PACKAGES = {
@@ -231,6 +234,111 @@ def stage(name: str) -> None:
     print(f'[orinos-stage] {name}', flush=True)
 
 
+class PreflightError(RuntimeError):
+    """A pre-flight safety check failed; nothing has been written yet."""
+
+
+def run(cmd: list) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+
+def check_not_busy(disk: str) -> None:
+    """Refuse to touch a disk that is mounted, in use or has holders.
+
+    Partitioning a mounted disk corrupts whatever is running from it, and a
+    disk with active holders (LVM, mdraid, dm-crypt) must be torn down by the
+    operator first -- guessing here loses data.
+    """
+    base = disk.rsplit('/', 1)[-1]
+
+    mounted = run(['lsblk', '-nrpo', 'MOUNTPOINT', disk]).stdout.split()
+    mounted = [m for m in mounted if m]
+    if mounted:
+        raise PreflightError(
+            f'{disk} has mounted partitions: {", ".join(mounted)}. '
+            'Unmount them before installing.')
+
+    holders = run(['lsblk', '-nrpo', 'NAME', disk, '--inverse']).stdout
+    holders = [h for h in holders.split() if h.startswith('/dev/')
+               and h != disk]
+    if holders:
+        raise PreflightError(
+            f'{disk} is in use by {", ".join(holders)} (LVM, RAID or '
+            'encrypted mapping). Tear those down before installing.')
+
+
+def check_target_empty(mountpoint: Path) -> None:
+    """A stale /mnt from an aborted run must not be reused silently."""
+    if not mountpoint.exists():
+        return
+    entries = [p for p in mountpoint.iterdir() if p.name not in ('lost+found',)]
+    if entries:
+        raise PreflightError(
+            f'{mountpoint} is not empty ({len(entries)} entries) — a '
+            'previous install may have been interrupted. Clear it before '
+            'retrying.')
+
+
+def check_boot_mode() -> str:
+    """Return 'uefi' or 'bios'; the bootloader must match the firmware."""
+    if Path('/sys/firmware/efi/efivars').is_dir():
+        return 'uefi'
+    return 'bios'
+
+
+def check_encryption_support() -> None:
+    """cryptsetup must exist before an encrypted layout is attempted."""
+    if shutil.which('cryptsetup') is None:
+        raise PreflightError(
+            'cryptsetup is not installed, so LUKS encryption cannot be '
+            'used. Reinstall without encryption or add the package.')
+
+
+def preflight(plan: dict, mountpoint: Path) -> str:
+    """Run every safety check before a single byte is written."""
+    disk = plan['disk']
+    if not Path(disk).exists():
+        raise PreflightError(f'Target disk {disk} does not exist.')
+
+    if plan['wipe']:
+        check_not_busy(disk)
+    else:
+        # Dual-boot only adds mountpoints to partitions that are not part of
+        # OrinOs; still refuse if the *target* disk is mounted somewhere.
+        check_not_busy(disk)
+
+    check_target_empty(mountpoint)
+
+    if plan.get('encryption'):
+        check_encryption_support()
+
+    mode = check_boot_mode()
+    boot_choice = plan.get('bootloader', 'grub')
+    if boot_choice == 'systemd-boot' and mode == 'bios':
+        raise PreflightError(
+            'systemd-boot needs UEFI firmware, but this machine booted '
+            'in BIOS mode. Choose GRUB or rEFInd instead.')
+    if mode == 'bios' and plan.get('encryption'):
+        raise PreflightError(
+            'Encrypted root requires UEFI firmware for the bootloader to '
+            'unlock it at boot; this machine is in BIOS mode.')
+
+    print(f'Pre-flight checks passed (firmware: {mode}, '
+          f'target: {disk}, mountpoint: {mountpoint}).')
+    return mode
+
+
+def unmount_all(mountpoint: Path) -> None:
+    """Best-effort teardown so a failed run does not leave a half-mounted
+    /mnt behind. Never raises: it runs on the error path."""
+    try:
+        subprocess.run(
+            ['umount', '-R', str(mountpoint)],
+            capture_output=True, text=True, check=False, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -238,8 +346,17 @@ def main() -> None:
 
     plan = load_plan(Path(sys.argv[1]))
     repo_url = plan['repo_url']
+    mountpoint = Path('/mnt')
 
+    # Every destructive check runs before anything is written, so a refusal
+    # leaves the machine exactly as it was.
     stage('preparing')
+    try:
+        firmware = preflight(plan, mountpoint)
+    except PreflightError as exc:
+        print(f'PREFLIGHT FAILED: {exc}', file=sys.stderr)
+        sys.exit(2)
+
     disk_config = build_disk_layout(plan)
 
     stage('partitioning')
@@ -254,8 +371,25 @@ def main() -> None:
     mirror_list_handler = MirrorListHandler()
     mirror_config = create_mirror_config(repo_url)
 
+    try:
+        _install(plan, disk_config, mirror_list_handler, mirror_config,
+                 repo_url, mountpoint, firmware)
+    except Exception:
+        # The Installer context manager already unmounts on a clean exit, but
+        # a hard failure (or a KeyboardInterrupt mid-pacstrap) can leave the
+        # tree mounted. Tear it down so a retry starts from a clean slate
+        # instead of hitting the "target is not empty" pre-flight check.
+        unmount_all(mountpoint)
+        raise
+    stage('done')
+    print('OrinOs install finished. Check for warnings above, then reboot.')
+
+
+def _install(plan, disk_config, mirror_list_handler, mirror_config,
+             repo_url, mountpoint, firmware):
+    """Run the installation inside the archinstall Installer context."""
     with Installer(
-        Path('/mnt'),
+        mountpoint,
         disk_config,
         kernels=['linux'],
     ) as installation:
@@ -290,7 +424,6 @@ def main() -> None:
         # Swap: either a swap partition (created by the GUI as a partition
         # with mountpoint None) or a swapfile sized by the plan.
         if plan.get('swap') == 'swapfile' and plan.get('swap_size_mib', 0) > 0:
-            size_gib = plan['swap_size_mib'] // 1024
             installation.arch_chroot(
                 f'dd if=/dev/zero of=/swapfile bs=1M '
                 f'count={plan["swap_size_mib"]} status=none && '
@@ -331,6 +464,15 @@ def main() -> None:
             installation.add_bootloader(Bootloader.Refind)
         else:
             installation.add_bootloader(Bootloader.Grub)
+
+        if plan.get('encryption'):
+            # archinstall already adds the LUKS device to mkinitcpio.conf,
+            # but only when it is left to drive mkinitcpio itself. Re-running
+            # it here guarantees the hook that asks for the password at boot
+            # is in the initramfs -- without it an encrypted root comes up to
+            # an emergency shell and never reaches the login screen.
+            installation.arch_chroot(
+                'mkinitcpio -P 2>&1 | tail -n 5')
 
         stage('users')
         username = plan['user']
@@ -385,8 +527,54 @@ def main() -> None:
             f'  {label_tool} "$root_dev" {shlex.quote(label)} 2>/dev/null || true; '
             f'fi')
 
-    stage('done')
-    print('OrinOs install finished. Check for warnings above, then reboot.')
+        verify_install(plan, mountpoint, firmware)
+
+
+def verify_install(plan: dict, mountpoint: Path, firmware: str) -> None:
+    """Check the installed system is actually bootable before declaring done.
+
+    Runs while /mnt is still mounted, so a missing bootloader or an unusable
+    initramfs is reported now rather than as a black screen after reboot.
+    """
+    problems = []
+
+    def check(label: str, cmd: list):
+        proc = run(cmd)
+        if proc.returncode != 0:
+            problems.append(f'{label}: {proc.stderr.strip() or "failed"}')
+
+    check('kernel image', ['test', '-e', str(mountpoint / 'boot/vmlinuz-linux')])
+    check('initramfs', ['test', '-e', str(mountpoint / 'boot/initramfs-linux.img')])
+    check('root filesystem', ['test', '-d', str(mountpoint / 'etc')])
+    check('user account', ['test', '-d',
+                           str(mountpoint / f'home/{plan["user"]}')])
+
+    boot_choice = plan.get('bootloader', 'grub')
+    if boot_choice == 'grub':
+        if firmware == 'uefi':
+            check('GRUB EFI image',
+                  ['test', '-e', str(mountpoint / 'boot/grub/x86_64-efi')])
+        else:
+            check('GRUB BIOS image',
+                  ['test', '-e', str(mountpoint / 'boot/grub/i386-pc')])
+    elif boot_choice == 'systemd-boot':
+        check('systemd-boot loader',
+              ['test', '-e', str(mountpoint / 'boot/loader/loader.efi')])
+
+    if plan.get('encryption'):
+        # Without the encrypt hook the initramfs cannot prompt for the LUKS
+        # password, so the machine would drop to an emergency shell.
+        check('LUKS initramfs hook',
+              ['test', '-e',
+               str(mountpoint / 'etc/initramfs.d/hooks/encrypt')])
+
+    if problems:
+        raise RuntimeError(
+            'The installation finished but verification failed:\n  - '
+            + '\n  - '.join(problems))
+
+    print('Verification passed: kernel, initramfs, bootloader and user '
+          'account are all in place.')
 
 
 if __name__ == '__main__':

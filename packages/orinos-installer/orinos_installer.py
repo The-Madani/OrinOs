@@ -352,6 +352,10 @@ LANGUAGES = {
         'error': 'Error',
         'warning': 'Warning',
         'install_failed': 'The installation failed. Review the log above.',
+        'preflight_failed': 'A safety check stopped the installation',
+        'preflight_failed_hint': 'Nothing was written to the disk. The '
+                                 'reason is in the log above — fix it and '
+                                 'press Install again.',
         'network_title': 'Network',
         'recommended': 'recommended',
         'timezone_hint': 'Sets the system clock and your time zone',
@@ -524,6 +528,10 @@ LANGUAGES = {
         'error': 'خطا',
         'warning': 'هشدار',
         'install_failed': 'نصب ناموفق بود. لاگ بالا را بررسی کنید.',
+        'preflight_failed': 'یک بررسی ایمنی نصب را متوقف کرد',
+        'preflight_failed_hint': 'هیچ چیزی روی دیسک نوشته نشده. علتش در '
+                                 'لاگ بالاست — مشکل رو حل کن و دوباره '
+                                 'نصب کن.',
         'network_title': 'شبکه',
         'recommended': 'پیشنهادی',
         'timezone_hint': 'ساعت سیستم و منطقه زمانی را تنظیم می‌کند',
@@ -2008,6 +2016,20 @@ class Wizard(QWidget):
             os.unlink(self._plan_file)
         except (OSError, AttributeError):
             pass
+        if code == 2:
+            # Backend refused before writing anything (exit code 2 = a
+            # pre-flight safety check). Nothing was changed, so going back to
+            # the disk page is safe and is what the user has to do.
+            self.stage_label.setText(self.t['preflight_failed'])
+            self.log_view.appendPlainText(self.t['preflight_failed_hint'])
+            self.stack.setCurrentIndex(4)
+            self.refresh_disk_page()
+            return
+        if code < 0:
+            self.stage_label.setText(self.t['stage_cancelled'])
+            self.log_view.appendPlainText(self.t['cancelled'])
+            self.stack.setCurrentIndex(8)
+            return
         if not self.install_ok:
             self.log_view.appendPlainText(self.t['install_failed'])
         self.stack.setCurrentIndex(8)
