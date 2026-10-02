@@ -83,7 +83,16 @@ BASE_PACKAGES = [
     # Wallpaper + colour scheme. Installed in the base set so it lands in
     # every installation, not only the full-desktop variant.
     'orinos-desktop',
-    # Needed by the encrypt hook below and by 'systemctl enable' targets.
+]
+
+# Packages that must exist before archinstall runs mkinitcpio.
+#
+# The mkinitcpio 'encrypt' hook does `add_binary 'cryptsetup'`, which resolves
+# the binary through PATH and calls `error` (and therefore fails the whole
+# build) when it is absent. minimal_installation() runs mkinitcpio before
+# add_additional_packages(), so anything needed by that hook has to be part of
+# the base package set handed to the Installer constructor instead.
+PRE_INITRAMFS_PACKAGES = [
     'cryptsetup',
 ]
 
@@ -388,9 +397,16 @@ def main() -> None:
 def _install(plan, disk_config, mirror_list_handler, mirror_config,
              repo_url, mountpoint, firmware):
     """Run the installation inside the archinstall Installer context."""
+    # base_packages replaces archinstall's default set, so the defaults
+    # (base, sudo, linux-firmware, mkinitcpio) have to be repeated here.
+    base_packages = ['base', 'sudo', 'linux-firmware', 'mkinitcpio']
+    if plan.get('encryption'):
+        base_packages += PRE_INITRAMFS_PACKAGES
+
     with Installer(
         mountpoint,
         disk_config,
+        base_packages=base_packages,
         kernels=['linux'],
     ) as installation:
         installation.set_mirrors(mirror_list_handler, mirror_config)
@@ -464,15 +480,6 @@ def _install(plan, disk_config, mirror_list_handler, mirror_config,
             installation.add_bootloader(Bootloader.Refind)
         else:
             installation.add_bootloader(Bootloader.Grub)
-
-        if plan.get('encryption'):
-            # archinstall already adds the LUKS device to mkinitcpio.conf,
-            # but only when it is left to drive mkinitcpio itself. Re-running
-            # it here guarantees the hook that asks for the password at boot
-            # is in the initramfs -- without it an encrypted root comes up to
-            # an emergency shell and never reaches the login screen.
-            installation.arch_chroot(
-                'mkinitcpio -P 2>&1 | tail -n 5')
 
         stage('users')
         username = plan['user']
@@ -562,11 +569,23 @@ def verify_install(plan: dict, mountpoint: Path, firmware: str) -> None:
               ['test', '-e', str(mountpoint / 'boot/loader/loader.efi')])
 
     if plan.get('encryption'):
-        # Without the encrypt hook the initramfs cannot prompt for the LUKS
-        # password, so the machine would drop to an emergency shell.
-        check('LUKS initramfs hook',
-              ['test', '-e',
-               str(mountpoint / 'etc/initramfs.d/hooks/encrypt')])
+        # The encrypt hook does `add_binary cryptsetup`; if cryptsetup was
+        # missing at build time mkinitcpio exits non-zero and the initramfs
+        # ships without it, which boots into an emergency shell instead of
+        # asking for the LUKS password. Verify the binary is really inside.
+        initramfs = mountpoint / 'boot/initramfs-linux.img'
+        if initramfs.is_file():
+            listing = run(['lsinitcpio', str(initramfs)])
+            entries = listing.stdout.splitlines()
+            if listing.returncode != 0:
+                problems.append(
+                    f'initramfs unreadable: {listing.stderr.strip()}')
+            elif 'usr/bin/cryptsetup' not in entries:
+                problems.append(
+                    'initramfs has no cryptsetup binary — an encrypted root '
+                    'would boot into an emergency shell')
+        else:
+            problems.append('initramfs missing, cannot verify LUKS support')
 
     if problems:
         raise RuntimeError(
