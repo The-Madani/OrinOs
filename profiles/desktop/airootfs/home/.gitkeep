@@ -1,0 +1,5 @@
+# mkarchiso resolves the home directory from /etc/passwd with realpath -q
+# before it creates it, so a missing path fails the traversal check and the
+# build aborts with "Outside of valid path". Shipping the (empty) /home
+# directory makes realpath succeed; the profile copy step then populates
+# liveuser's home from /etc/skel as usual.

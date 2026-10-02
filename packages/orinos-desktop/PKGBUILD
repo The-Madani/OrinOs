@@ -6,10 +6,9 @@ pkgrel=1
 pkgdesc="OrinOs Plasma desktop look: wallpaper and colour scheme"
 arch=('any')
 license=('GPL-3.0-only')
-depends=('plasma-workspace' 'kdegraphics')
-optdepends=('breeze-icons: default icon theme'
-            'breeze: default Plasma theme'
-            'plasma-workspace: default wallpaper plugin')
+depends=('plasma-workspace')
+optdepends=('breeze: default Plasma theme and icon set'
+            'kdeplasma-wallpapers: alternative wallpapers in the chooser')
 source=("OrinOs.colors" "OrinOsDark.colors" "wallpaper.png"
         "orinos-apply-desktop.sh" "orinos-desktop.service"
         "metadata.json" "kdeglobals")
