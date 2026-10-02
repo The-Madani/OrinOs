@@ -2,7 +2,7 @@
 
 pkgname=orinos-desktop
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="OrinOs Plasma desktop look: wallpaper and colour scheme"
 arch=('any')
 license=('GPL-3.0-only')

@@ -8,7 +8,7 @@
 set -euo pipefail
 
 WALLPAPER="${ORINOS_WALLPAPER:-/usr/share/backgrounds/orinos.png}"
-SCHEME="${ORINOS_SCHEME:-BreezeDark}"
+SCHEME="${ORINOS_SCHEME:-OrinOsDark}"
 
 log() { printf 'orinos-desktop: %s\n' "$*" >&2; }
 
