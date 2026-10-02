@@ -1,0 +1,45 @@
+# Maintainer: OrinOs <https://github.com/The-Madani/OrinOs>
+
+pkgname=orinos-desktop
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="OrinOs Plasma desktop look: wallpaper and colour scheme"
+arch=('any')
+license=('GPL-3.0-only')
+depends=('plasma-workspace' 'kdegraphics')
+optdepends=('breeze-icons: default icon theme'
+            'breeze: default Plasma theme'
+            'plasma-workspace: default wallpaper plugin')
+source=("OrinOs.colors" "OrinOsDark.colors" "wallpaper.png"
+        "orinos-apply-desktop.sh" "orinos-desktop.service"
+        "metadata.json" "kdeglobals")
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+package() {
+    # Plasma picks wallpapers from a KPackage directory (so the chooser shows
+    # the OrinOs name) and from /usr/share/backgrounds (the plain-file path).
+    install -Dm644 "${srcdir}/wallpaper.png" \
+        "${pkgdir}/usr/share/wallpapers/orinos/contents/images/1920x1080.png"
+    install -Dm644 "${srcdir}/wallpaper.png" \
+        "${pkgdir}/usr/share/backgrounds/orinos.png"
+
+    # metadata.json makes the KPackage directory appear in the wallpaper
+    # chooser; without it Plasma silently ignores the directory.
+    install -Dm644 "${srcdir}/metadata.json" \
+        "${pkgdir}/usr/share/wallpapers/orinos/metadata.json"
+
+    install -Dm644 "${srcdir}/OrinOs.colors" \
+        "${pkgdir}/usr/share/color-schemes/OrinOs.colors"
+    install -Dm644 "${srcdir}/OrinOsDark.colors" \
+        "${pkgdir}/usr/share/color-schemes/OrinOsDark.colors"
+
+    install -Dm755 "${srcdir}/orinos-apply-desktop.sh" \
+        "${pkgdir}/usr/bin/orinos-apply-desktop"
+    install -Dm644 "${srcdir}/orinos-desktop.service" \
+        "${pkgdir}/usr/lib/systemd/user/orinos-desktop.service"
+
+    # Newly created accounts get the OrinOs look without waiting for a
+    # reboot: useradd copies /etc/skel, so drop a preset there too.
+    install -Dm644 "${srcdir}/kdeglobals" \
+        "${pkgdir}/etc/skel/.config/kdeglobals"
+}

@@ -1,0 +1,10 @@
+[KDE]
+ColorScheme=BreezeDark
+lookAndFeelPackage=org.kde.plasma.desktop
+WidgetStyle=Breeze
+
+[Icons]
+Theme=breeze
+
+[General]
+font=Droid Sans,10,-1,5,50,0,0,0,0,0

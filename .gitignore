@@ -22,4 +22,5 @@ packages/os/
 /.zshrc
 /.idea
 /.vscode
+.claude/
 /.claude/

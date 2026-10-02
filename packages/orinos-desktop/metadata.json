@@ -1,0 +1,15 @@
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "OrinOs"
+            }
+        ],
+        "Id": "orinos",
+        "Name": "OrinOs",
+        "Description": "Default OrinOs wallpaper",
+        "License": "GPL-3.0-or-later",
+        "Version": "0.1.0"
+    },
+    "X-Plasma-API": "declarativeappletscript"
+}

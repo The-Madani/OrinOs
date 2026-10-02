@@ -1,0 +1,28 @@
+# Maintainer: OrinOs <https://github.com/The-Madani/OrinOs>
+
+pkgname=orinos-installer
+pkgver=0.1.0
+pkgrel=12
+pkgdesc="OrinOs graphical installer (PySide6 frontend over archinstall)"
+arch=('any')
+license=('GPL-3.0-only')
+depends=('python' 'pyside6' 'archinstall' 'polkit')
+source=("orinos-installer"
+        "orinos-installer.desktop"
+        "orinos-installer-admin.rules"
+        "orinos_installer.py"
+        "install.py")
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+package() {
+    install -Dm755 "${srcdir}/orinos-installer" \
+        "${pkgdir}/usr/bin/orinos-installer"
+    install -Dm644 "${srcdir}/orinos_installer.py" \
+        "${pkgdir}/usr/lib/orinos-installer/orinos_installer.py"
+    install -Dm644 "${srcdir}/install.py" \
+        "${pkgdir}/usr/lib/orinos-installer/install.py"
+    install -Dm644 "${srcdir}/orinos-installer.desktop" \
+        "${pkgdir}/usr/share/applications/orinos-installer.desktop"
+    install -Dm644 "${srcdir}/orinos-installer-admin.rules" \
+        "${pkgdir}/etc/polkit-1/rules.d/60-orinos-installer.rules"
+}

@@ -1,0 +1,19 @@
+[Unit]
+# /orinos-repo is referenced by /etc/pacman.conf as file:///orinos-repo,
+# but the airootfs is read-only (erofs); this unit materializes a
+# writable copy on tmpfs at boot so pacman can consume the repository
+# offline inside the live environment.
+Description=OrinOs live repo materialization
+DefaultDependencies=no
+Conflicts=shutdown.target
+After=systemd-udevd.service
+Before=sysinit.target
+ConditionPathExists=/etc/pacman.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/refresh-orinos-repo
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

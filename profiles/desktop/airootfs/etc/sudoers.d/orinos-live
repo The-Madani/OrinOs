@@ -1,0 +1,4 @@
+# Live-session convenience: the passwordless `liveuser` may run the
+# installer backend (and only it) as root. Present on the live medium
+# only; the installed system does not include this file.
+liveuser ALL=(root) NOPASSWD: /usr/bin/python3 /usr/lib/orinos-installer/orinos_installer.py, /usr/bin/orinos-installer

@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply the OrinOs Plasma look in the live session
+After=plasma-plasmashell.service
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/orinos-apply-desktop
+RemainAfterExit=yes
+TimeoutSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Apply the OrinOs Plasma desktop look (wallpaper, colours)
+Documentation=https://github.com/The-Madani/OrinOs
+PartOf=graphical-session.target
+After=plasma-plasmashell.service
+
+[Service]
+Type=oneshot
+# Run after the shell is up so the wallpaper containment already exists;
+# plasma-apply-wallpaper silently no-ops otherwise.
+ExecStart=/usr/bin/orinos-apply-desktop
+RemainAfterExit=yes
+TimeoutSec=30
+
+[Install]
+WantedBy=plasma-workspace.target

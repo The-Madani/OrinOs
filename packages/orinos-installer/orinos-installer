@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# OrinOs graphical installer launcher.
+#
+# In the live desktop session the user is not root; the installer backend
+# needs root, so relaunch through a local privilege-escalation helper if
+# available (GUI su/pkexec are covered by /etc/polkit-1 rules packaged
+# alongside). When already root, run directly.
+set -euo pipefail
+
+LOG=/tmp/orinos-installer.log
+log() { printf '%s orinos-installer: %s\n' "$(date +%T)" "$*" >>"$LOG"; }
+
+if [[ ${EUID} -eq 0 ]]; then
+    log "already root, launching GUI directly"
+    exec /usr/bin/python3 /usr/lib/orinos-installer/orinos_installer.py "$@"
+fi
+
+for helper in pkexec lxqt-sudo kde-sudo; do
+    if command -v "${helper}" >/dev/null 2>&1; then
+        log "elevating via ${helper}"
+        case "${helper}" in
+            pkexec)
+                # pkexec drops the environment; forward the display-server
+                # context so Qt finds the session (X11 or Wayland — the
+                # live session runs Wayland, so XDG_RUNTIME_DIR is what
+                # actually carries the display socket).
+                exec pkexec env \
+                    DISPLAY="${DISPLAY:-:0}" \
+                    WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}" \
+                    XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+                    QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-wayland;xcb}" \
+                    /usr/bin/python3 \
+                    /usr/lib/orinos-installer/orinos_installer.py "$@"
+                ;;
+            *)
+                exec "${helper}" /usr/bin/python3 \
+                    /usr/lib/orinos-installer/orinos_installer.py "$@"
+                ;;
+        esac
+    fi
+done
+
+log "ERROR: no privilege helper found"
+echo "orinos-installer: no privilege helper found (install polkit)." >&2
+exit 1

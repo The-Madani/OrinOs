@@ -1,0 +1,10 @@
+// Allow the live-session user to run the OrinOs installer backend as
+// root without a password (live user has no password by design).
+// Checked both ways: the user name (primary path) and a dedicated
+// 'orinos-live' group (secondary path, for custom live builds).
+polkit.addRule(function (action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        (subject.user == "liveuser" || subject.isInGroup("orinos-live"))) {
+        return polkit.Result.YES;
+    }
+});

@@ -1,14 +1,13 @@
 # Maintainer: OrinOs <https://github.com/The-Madani/OrinOs>
 
 pkgname=orinos-branding
-pkgver=0.3.1
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="OrinOs distribution identity files (PoC)"
 arch=('any')
 license=('GPL-3.0-only')
-backup=('etc/os-release' 'etc/issue')
-source=("os-release" "issue" "orinos-branding.conf" "orinos.ascii" "config.jsonc" "config.fish")
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+source=("os-release" "issue" "orinos-branding.conf" "orinos.ascii" "config.jsonc" "config.fish" "logo.png")
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
     # /etc/os-release, /etc/issue and even /usr/share/factory/etc/* are
@@ -17,6 +16,10 @@ package() {
     # systemd-tmpfiles rule instead.
     install -Dm644 "${srcdir}/os-release" "${pkgdir}/usr/share/orinos-branding/os-release"
     install -Dm644 "${srcdir}/issue" "${pkgdir}/usr/share/orinos-branding/issue"
+
+    # Brand icon for desktop entries (installer "Install OrinOs" etc).
+    install -Dm644 "${srcdir}/logo.png" \
+        "${pkgdir}/usr/share/icons/hicolor/scalable/apps/orinos-logo.png"
 
     install -Dm644 "${srcdir}/orinos-branding.conf" \
         "${pkgdir}/etc/tmpfiles.d/orinos-branding.conf"

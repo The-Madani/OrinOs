@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Install OrinOs
+Name[fa]=نصب OrinOs
+Comment=Install OrinOs to your computer
+Comment[fa]=نصب OrinOs روی رایانه شما
+Exec=/usr/bin/orinos-installer
+Icon=orinos-logo
+Terminal=false
+Categories=System;
+StartupNotify=true

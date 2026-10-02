@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Pre-trust the "Install OrinOs" desktop icon for the live session so the
+# Plasma folder view doesn't mark it untrusted (the "!" badge). Requires
+# gvfs for gio metadata; a no-op failure is harmless.
+set -euo pipefail
+DESKTOP="${XDG_DESKTOP_DIR:-$HOME/Desktop}/install-orinos.desktop"
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if [ -f "$DESKTOP" ]; then
+        # KIO trusts a desktop file only when it is executable AND the
+        # gvfs metadata flag is set (whichever mechanism the running
+        # Plasma version consults — do both). gio's first call spawns
+        # gvfsd-metadata, so repeat it once to survive the daemon race.
+        chmod +x "$DESKTOP"
+        gio set "$DESKTOP" metadata::trusted true 2>/dev/null || true
+        sleep 1
+        gio set "$DESKTOP" metadata::trusted true 2>/dev/null || true
+        exit 0
+    fi
+    sleep 1
+done
+exit 0

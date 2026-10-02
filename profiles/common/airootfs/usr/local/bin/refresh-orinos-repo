@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Materialize the embedded [orinos] repository at /orinos-repo (tmpfs).
+# The live airootfs is read-only, but pacman needs a readable database
+# path — /opt/orinos-repo inside the erofs image would actually work for
+# reads, yet the same file:///orinos-repo URL must also survive on the
+# installed system during setup, so a stable top-level path is used.
+set -euo pipefail
+
+mkdir -p /orinos-repo/x86_64
+if [ -d /opt/orinos-repo/x86_64 ] && [ -f /opt/orinos-repo/x86_64/orinos.db.tar.gz ]; then
+    cp -a /opt/orinos-repo/x86_64/. /orinos-repo/x86_64/
+else
+    echo "refresh-orinos-repo: no embedded repo found, skipping" >&2
+    exit 0
+fi

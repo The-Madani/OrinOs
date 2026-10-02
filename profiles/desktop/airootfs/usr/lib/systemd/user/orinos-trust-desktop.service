@@ -1,0 +1,10 @@
+[Unit]
+Description=Pre-trust the OrinOs installer desktop icon
+After=plasma-plasmashell.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/orinos-trust-desktop
+
+[Install]
+WantedBy=default.target
