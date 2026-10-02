@@ -1,0 +1,18 @@
+[Unit]
+# /orinos-cache is referenced by CacheDir in pacman.conf, but the airootfs is
+# read-only (erofs); this unit materializes a writable copy on tmpfs at boot so
+# the offline installer has packages to install from without a network.
+Description=OrinOs offline package cache materialization
+DefaultDependencies=no
+Conflicts=shutdown.target
+After=systemd-udevd.service
+Before=sysinit.target
+ConditionPathExists=/etc/pacman.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/refresh-orinos-cache
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

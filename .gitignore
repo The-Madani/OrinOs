@@ -24,3 +24,7 @@ packages/os/
 /.vscode
 .claude/
 /.claude/
+
+# Offline package cache: 700+ MB of .pkg.tar.zst rebuilt by
+# build-offline-cache.py from the host pacman cache, never committed.
+profiles/*/airootfs/opt/orinos-cache/

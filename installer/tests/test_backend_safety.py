@@ -114,6 +114,52 @@ check('no redundant mkinitcpio -P call', 'mkinitcpio -P' not in src)
 check('verify_install inspects the initramfs with lsinitcpio',
       'lsinitcpio' in src)
 
+# --- offline install --------------------------------------------------------
+with tempfile.TemporaryDirectory() as tmp:
+    cache = Path(tmp) / 'cache'
+    cache.mkdir()
+    (cache / 'base-3-3-any.pkg.tar.zst').write_bytes(b'')
+    (cache / 'linux-7.2.7.arch1-1-x86_64.pkg.tar.zst').write_bytes(b'')
+    original = backend.OFFLINE_CACHE
+    backend.OFFLINE_CACHE = cache
+    try:
+        path = Path(tmp) / 'plan.json'
+        path.write_text(json.dumps(dict(good, install_mode='online')))
+        backend.load_plan(path)
+        check('an online plan loads without a cache', True)
+
+        path.write_text(json.dumps(dict(good, install_mode='offline')))
+        try:
+            backend.load_plan(path)
+            check('an offline plan loads when the cache exists', True)
+        except ValueError as exc:
+            check('an offline plan loads when the cache exists', False, str(exc))
+
+        path.write_text(json.dumps(dict(good, install_mode='carrier-pigeon')))
+        try:
+            backend.load_plan(path)
+            check('an unknown install mode is rejected', False)
+        except ValueError:
+            check('an unknown install mode is rejected', True)
+
+        # An empty cache must be refused, not discovered halfway through pacman.
+        empty = Path(tmp) / 'empty'
+        empty.mkdir()
+        backend.OFFLINE_CACHE = empty
+        path.write_text(json.dumps(dict(good, install_mode='offline')))
+        try:
+            backend.load_plan(path)
+            check('an offline plan without packages is rejected', False)
+        except ValueError:
+            check('an offline plan without packages is rejected', True)
+    finally:
+        backend.OFFLINE_CACHE = original
+
+check('install_offline_cache() is defined',
+      callable(getattr(backend, 'install_offline_cache', None)))
+check('check_offline_cache() is defined',
+      callable(getattr(backend, 'check_offline_cache', None)))
+
 # --- a plan that claims offline must not install silently online -----------
 print()
 if failures:

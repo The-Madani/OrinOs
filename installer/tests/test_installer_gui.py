@@ -88,35 +88,49 @@ check('welcome page has no Back button', visible_back() == [],
 
 # --- recommended defaults survive a language switch -------------------------
 wizard2 = oi.Wizard()
-before = {
-    'fs': wizard2.fs_combo.currentData(),
-    'boot': wizard2.bootloader_combo.currentData(),
-    'swap': wizard2.swap_spin.value(),
-    'label': wizard2.label_edit.text(),
-    'hostname': wizard2.hostname_edit.text(),
-    'desktop_full': wizard2.rb_desktop_full.isChecked(),
-    'online': wizard2.rb_mode_online.isChecked(),
-    'auto_disk': wizard2.rb_auto.isChecked(),
-    'no_enc': wizard2.rb_enc_none.isChecked(),
-    'swapfile': wizard2.rb_swap_file.isChecked(),
-}
+
+# The install mode follows connectivity, not the language switch, and a test
+# host usually has no network — so it is excluded from the comparison and
+# checked separately below.
+DEFAULTS = ('fs', 'boot', 'swap', 'label', 'hostname', 'desktop_full',
+            'auto_disk', 'no_enc', 'swapfile')
+
+
+def defaults(w):
+    return {
+        'fs': w.fs_combo.currentData(),
+        'boot': w.bootloader_combo.currentData(),
+        'swap': w.swap_spin.value(),
+        'label': w.label_edit.text(),
+        'hostname': w.hostname_edit.text(),
+        'desktop_full': w.rb_desktop_full.isChecked(),
+        'auto_disk': w.rb_auto.isChecked(),
+        'no_enc': w.rb_enc_none.isChecked(),
+        'swapfile': w.rb_swap_file.isChecked(),
+    }
+
+
+before = defaults(wizard2)
 wizard2.pick_language('fa')
-after = {
-    'fs': wizard2.fs_combo.currentData(),
-    'boot': wizard2.bootloader_combo.currentData(),
-    'swap': wizard2.swap_spin.value(),
-    'label': wizard2.label_edit.text(),
-    'hostname': wizard2.hostname_edit.text(),
-    'desktop_full': wizard2.rb_desktop_full.isChecked(),
-    'online': wizard2.rb_mode_online.isChecked(),
-    'auto_disk': wizard2.rb_auto.isChecked(),
-    'no_enc': wizard2.rb_enc_none.isChecked(),
-    'swapfile': wizard2.rb_swap_file.isChecked(),
-}
+after = defaults(wizard2)
 check('recommended defaults survive a language switch', before == after,
       f'{before} != {after}')
 check('root filesystem default is ext4', after['fs'] == 'ext4', str(after['fs']))
 check('bootloader default is GRUB', after['boot'] == 'grub', str(after['boot']))
+
+# --- the install mode follows connectivity ----------------------------------
+oi.network_online = lambda: False
+wizard3 = oi.Wizard()
+wizard3._probe_network()
+check('no internet preselects offline',
+      wizard3.rb_mode_offline.isChecked() and not wizard3.rb_mode_online.isChecked(),
+      'offline should be preselected when the probe fails')
+oi.network_online = lambda: True
+wizard4 = oi.Wizard()
+wizard4._probe_network()
+check('with internet online stays preselected',
+      wizard4.rb_mode_online.isChecked(),
+      'online should stay selected when the probe succeeds')
 
 # --- the plan must not carry a display string ------------------------------
 wizard2._confirm = lambda msg: True

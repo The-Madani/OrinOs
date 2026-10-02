@@ -69,6 +69,15 @@ mkdir -p "${EMBED_DIR}/x86_64"
 cp "${REPO_ROOT}/packages/os/x86_64/"*.pkg.tar.zst "${EMBED_DIR}/x86_64/"
 cp "${REPO_ROOT}/packages/os/x86_64/orinos.db.tar.gz" "${EMBED_DIR}/x86_64/"
 
+# Offline package cache. mkarchiso runs `pacstrap -c`, which installs from the
+# host cache and leaves nothing in the airootfs, so the medium ships no
+# packages of its own unless they are embedded here. The cache has to be built
+# before the profile is assembled, because it lives inside the profile tree.
+"${REPO_ROOT}/build-offline-cache.py" "${MODE}" || {
+    echo "==> Offline cache incomplete; the ISO would not install offline." >&2
+    exit 1
+}
+
 # The [orinos] Server line in the profile pacman.conf points at
 # /orinos-repo — a path that exists inside the live system but NOT on the
 # build host. Build-time pacstrap runs on the host, so rewrite the URL to

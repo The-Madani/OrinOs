@@ -19,5 +19,6 @@ file_permissions=(
   # mkarchiso does not preserve exec bits when copying airootfs; scripts
   # must be listed here or systemd can't spawn them (status=203/EXEC).
   ["/usr/local/bin/refresh-orinos-repo"]="0:0:755"
+  ["/usr/local/bin/refresh-orinos-cache"]="0:0:755"
   ["/usr/local/bin/orinos-trust-desktop"]="0:0:755"
 )

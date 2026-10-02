@@ -214,6 +214,10 @@ LANGUAGES = {
         'net_ok': 'Internet connection detected.',
         'net_missing': 'No internet connection detected. An internet '
                        'connection is required to download packages.',
+        'net_missing_offline_hint': 'No internet connection detected — '
+                                 'offline installation has been '
+                                 'selected using the packages bundled on '
+                                 'this medium.',
         'location_title': 'Location',
         'timezone': 'Time zone',
         'clock_format': 'Clock format',
@@ -333,6 +337,7 @@ LANGUAGES = {
                             'untouched. Continue?',
         'stage_preparing': 'Preparing…',
         'stage_partitioning': 'Partitioning the disk…',
+        'stage_offline_cache': 'Copying the offline package cache…',
         'stage_mounting': 'Mounting partitions…',
         'stage_base_system': 'Installing the base system…',
         'stage_packages': 'Downloading and installing packages…',
@@ -391,6 +396,9 @@ LANGUAGES = {
         'net_ok': 'اتصال اینترنت شناسایی شد.',
         'net_missing': 'اتصال اینترنت شناسایی نشد. برای دانلود بسته‌ها '
                        'اتصال اینترنت لازم است.',
+        'net_missing_offline_hint': 'اتصال اینترنت شناسایی نشد — نصب '
+                                 'آفلاین با بسته‌های داخل این رسانه '
+                                 'انتخاب شد.',
         'location_title': 'موقعیت مکانی',
         'timezone': 'منطقه زمانی',
         'clock_format': 'قالب ساعت',
@@ -509,6 +517,7 @@ LANGUAGES = {
                             'ادامه می‌دهید؟',
         'stage_preparing': 'آماده‌سازی…',
         'stage_partitioning': 'پارتیشن‌بندی دیسک…',
+        'stage_offline_cache': 'کپی کش بسته‌های آفلاین…',
         'stage_mounting': 'مانت کردن پارتیشن‌ها…',
         'stage_base_system': 'نصب سیستم پایه…',
         'stage_packages': 'دانلود و نصب بسته‌ها…',
@@ -750,6 +759,7 @@ STAGES = [
     ('preparing', 2),
     ('partitioning', 8),
     ('mounting', 3),
+    ('offline-cache', 4),
     ('base-system', 12),
     ('packages', 55),
     ('bootloader', 8),
@@ -1301,8 +1311,12 @@ class Wizard(QWidget):
         # Offline mode needs no internet; online mode warns but allows.
         self.rb_mode_online.setEnabled(True)
         if not ok:
-            self.net_label.setText(
-                self.t['net_missing'] + ' (' + self.t['mode_offline'] + ')')
+            # Preselect offline: online would fail on the first download, so
+            # leaving it selected would send the user into a failure they have
+            # to diagnose rather than one they can simply avoid.
+            self.rb_mode_offline.setChecked(True)
+            self.rb_mode_online.setChecked(False)
+            self.net_label.setText(self.t['net_missing_offline_hint'])
 
         mem_mib = 0
         try:
