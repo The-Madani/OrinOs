@@ -92,7 +92,7 @@ wizard2 = oi.Wizard()
 # The install mode follows connectivity, not the language switch, and a test
 # host usually has no network — so it is excluded from the comparison and
 # checked separately below.
-DEFAULTS = ('fs', 'boot', 'swap', 'label', 'hostname', 'desktop_full',
+DEFAULTS = ('fs', 'boot', 'swap', 'label', 'hostname',
             'auto_disk', 'no_enc', 'swapfile')
 
 
@@ -103,7 +103,6 @@ def defaults(w):
         'swap': w.swap_spin.value(),
         'label': w.label_edit.text(),
         'hostname': w.hostname_edit.text(),
-        'desktop_full': w.rb_desktop_full.isChecked(),
         'auto_disk': w.rb_auto.isChecked(),
         'no_enc': w.rb_enc_none.isChecked(),
         'swapfile': w.rb_swap_file.isChecked(),
@@ -125,12 +124,42 @@ wizard3._probe_network()
 check('no internet preselects offline',
       wizard3.rb_mode_offline.isChecked() and not wizard3.rb_mode_online.isChecked(),
       'offline should be preselected when the probe fails')
+
+# The medium only bundles the minimal desktop; the full variant is selectable
+# online but must not be choosable offline, or the install fails in pacman.
+check('offline disables the full desktop option',
+      not wizard3.rb_desktop_full.isEnabled(),
+      'full desktop must be disabled while offline')
+check('offline falls back to the minimal desktop',
+      wizard3.rb_desktop_minimal.isChecked(),
+      'minimal must be selected while offline')
+
+wizard3.rb_mode_online.setChecked(True)
+wizard3.rb_mode_offline.setChecked(False)
+app.processEvents()
+check('switching back online re-enables the full desktop',
+      wizard3.rb_desktop_full.isEnabled(),
+      'full desktop must be available again online')
+check('switching back online leaves the desktop choice alone',
+      wizard3.rb_desktop_full.isChecked(),
+      'the previously chosen variant must not be reset')
+
+wizard3.rb_mode_offline.setChecked(True)
+wizard3.rb_mode_online.setChecked(False)
+app.processEvents()
+check('going offline again reverts to the minimal desktop',
+      wizard3.rb_desktop_minimal.isChecked(),
+      'minimal must be selected while offline')
+
 oi.network_online = lambda: True
 wizard4 = oi.Wizard()
 wizard4._probe_network()
 check('with internet online stays preselected',
       wizard4.rb_mode_online.isChecked(),
       'online should stay selected when the probe succeeds')
+check('online keeps the full desktop available',
+      wizard4.rb_desktop_full.isEnabled(),
+      'full desktop must be selectable online')
 
 # --- the plan must not carry a display string ------------------------------
 wizard2._confirm = lambda msg: True

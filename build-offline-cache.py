@@ -26,11 +26,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
 
+# Usage: build-offline-cache.py [--fetch-only] [MODE] [PROFILE_DIR]
+#
+# PROFILE_DIR is where the cache is written. build-iso.sh passes the profile
+# it assembled under work/, because that is the tree mkarchiso reads; the
+# source profiles/<mode> directory has already been copied by then. Passing it
+# as an argument rather than through the environment keeps it working under
+# sudo, which resets the environment by default.
 args = [a for a in sys.argv[1:] if a != '--fetch-only']
 FETCH_ONLY = '--fetch-only' in sys.argv[1:]
 MODE = args[0] if args else 'desktop'
-
-PROFILE = REPO_ROOT / 'profiles' / MODE
+PROFILE = Path(args[1]) if len(args) > 1 else REPO_ROOT / 'profiles' / MODE
 if not PROFILE.is_dir():
     sys.exit(f"Unknown mode '{MODE}'; expected a profile at {PROFILE}")
 
@@ -41,11 +47,11 @@ BASE_PACKAGES = [
 
 DESKTOP_PACKAGES = [
     'orinos-branding', 'orinos-desktop',
-    # Both variants: the user chooses on the disk page, and offline there is
-    # no way to fetch what the other choice would have needed.
+    # Only the minimal desktop is bundled. The full 'plasma' group pulls in
+    # roughly 180 extra packages on top of this, which nearly doubled the ISO
+    # to 5-6 GB for a set that most offline installs do not need; anyone who
+    # wants the full desktop can install it once the system is online.
     'plasma-desktop', 'konsole', 'dolphin',
-    # The full 'plasma' group, which is what DESKTOP_PACKAGES['full'] installs.
-    'plasma',
 ]
 
 # Optional dependencies that matter enough to bundle. pacman will not install
@@ -173,13 +179,13 @@ def load_cache(cache: Path):
         meta[name] = info
         for provided in info['provides']:
             providers.setdefault(provided, []).append(name)
-    # plasma is a group, not a package: expand it the way pacman would.
-    roots = sorted((set(WANTED) | set(group_members('plasma'))
-                | (set(WANTED_OPTIONAL) if MODE == 'desktop' else set()))
-               # 'plasma' names a group, not a package: pacman installs the
-               # members, so following the name itself would look for a file
-               # that never exists.
-               - {'plasma'})
+    # 'plasma' is a group rather than a package, and bundling every member
+    # roughly doubled the ISO for a desktop most offline installs do not want.
+    # The cache therefore covers the minimal desktop only; the backend refuses
+    # an offline install asking for the full one instead of failing deep in
+    # pacman.
+    roots = sorted(set(WANTED)
+                   | (set(WANTED_OPTIONAL) if MODE == 'desktop' else set()))
     seen, unresolved = resolve_closure(index, meta, providers, roots)
     return index, seen, unresolved
 

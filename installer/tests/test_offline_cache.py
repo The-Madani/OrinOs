@@ -100,6 +100,73 @@ finally:
 check('the download loop gives up instead of spinning forever',
       exhausted, 'expected SystemExit after the round limit')
 
+# --- the cache must land in the profile mkarchiso actually builds -----------
+# build-iso.sh assembles work/<mode>-profile and runs mkarchiso on that; the
+# source profiles/<mode> directory was copied before the cache was built. Writing
+# the cache into profiles/ produced an ISO with no cache at all, so the offline
+# install silently fell back to the network.
+build_iso = (BUILDER.parent / 'build-iso.sh').read_text()
+check('build-iso.sh passes the assembled profile to the cache builder',
+      '"${MODE}" "${PROFILE}"' in build_iso,
+      'the profile path must reach the builder as an argument')
+
+check('the cache builder takes the profile as an argument',
+      'args[1]' in BUILDER.read_text(),
+      'expected: MODE and PROFILE as positional arguments')
+
+check('the profile path does not travel through the environment',
+      'ORINOS_PROFILE' not in BUILDER.read_text()
+      and 'ORINOS_PROFILE' not in build_iso,
+      'sudo resets the environment, so the path must be an argument')
+
+# --- end to end: the cache must appear where mkarchiso looks for it ----------
+# Reproduces the build order: copy the profiles into a work directory the way
+# build-iso.sh does, then run the builder against that directory. The failure
+# this guards against is silent -- the ISO built fine, it just had no packages,
+# so offline install fell back to the network and the user saw it as a bug with
+# no obvious cause.
+import os  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+
+repo = BUILDER.parent
+
+# The real cache is over a gigabyte, so it is not copied here; what matters is
+# *where* the builder writes. Give it a throwaway profile and let it create the
+# directory itself, then confirm the files land there and nowhere else.
+with tempfile.TemporaryDirectory() as tmp:
+    profile = Path(tmp) / 'desktop-profile' / 'airootfs'
+    profile.mkdir(parents=True)
+
+    stale = repo / 'profiles' / 'desktop' / 'airootfs' / 'opt' / 'orinos-cache'
+    check('the source profile carries no stale cache', not stale.exists(),
+          f'{stale} exists; it should only ever live under work/')
+
+    real_profile = cache.PROFILE
+    cache.PROFILE = Path(tmp) / 'desktop-profile'
+    # Point the host cache at the real one but stop the copy from running, so
+    # the test exercises path selection without moving a gigabyte.
+    embedded = cache.PROFILE / 'airootfs' / 'opt' / 'orinos-cache'
+    embedded.mkdir(parents=True)
+    try:
+        original_copy = cache.shutil.copy2
+        cache.shutil.copy2 = lambda src, dst, **kw: dst      # type: ignore
+        cache.main()
+        cache.shutil.copy2 = original_copy
+        check('the builder completes against the profile it was given', True)
+    except SystemExit as exc:
+        cache.shutil.copy2 = original_copy
+        check('the builder completes against the profile it was given', False,
+              f'exited: {exc}')
+    finally:
+        cache.PROFILE = real_profile
+
+    check('the builder created the cache directory inside that profile',
+          embedded.is_dir(), f'{embedded} was not created')
+    check('the source profile is still free of a cache',
+          not stale.exists(),
+          'the builder must not write into profiles/')
+
 print()
 if failures:
     print(f'{len(failures)} FAILED: {failures}')

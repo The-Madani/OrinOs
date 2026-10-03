@@ -314,6 +314,10 @@ LANGUAGES = {
         'desktop_full': 'Full desktop (recommended)',
         'desktop_full_hint': 'Complete Plasma desktop with all its '
                              'applications',
+        'desktop_full_offline_hint': 'Not bundled on this medium; it '
+                                'nearly doubles the ISO. Choose online '
+                                'installation to get the full desktop, or '
+                                'install the extra packages later.',
         'desktop_minimal': 'Minimal desktop',
         'desktop_minimal_hint': 'Core desktop, terminal and file manager only',
         'summary_title': 'Review and install',
@@ -494,6 +498,10 @@ LANGUAGES = {
         'desktop_variant': 'میزکار',
         'desktop_full': 'میزکار کامل (پیشنهادی)',
         'desktop_full_hint': 'میزکار کامل پلاسما همراه با تمام برنامه‌ها',
+        'desktop_full_offline_hint': 'روی این رسانه ارائه نشده؛ حجم ایزو '
+                                'را تقریباً دو برابر می‌کند. برای میزکار '
+                                'کامل نصب آنلاین را انتخاب کنید یا بعداً '
+                                'بسته‌های اضافه را نصب نمایید.',
         'desktop_minimal': 'میزکار مینیمال',
         'desktop_minimal_hint': 'فقط هسته دسکتاپ، ترمینال و مدیریت فایل',
         'summary_title': 'بازبینی و نصب',
@@ -915,6 +923,9 @@ class Wizard(QWidget):
         self.root_password = ''
         self.worker = None
         self._plan_file = None
+        # Set when the full desktop is switched away because of offline mode,
+        # so returning to online can restore the user's original choice.
+        self._desktop_wanted_full = False
         self.stack = QStackedWidget()
         self.pages = {}
         self.page_titles = {}
@@ -1196,6 +1207,11 @@ class Wizard(QWidget):
         # Defaults so a lazy user can reach "Install" by clicking Next only.
         self._apply_recommended_defaults()
         self._mark_recommended_options()
+        # The install-mode radios live on the welcome page and the desktop
+        # radios on the user page, so this link can only be made once both
+        # pages exist.
+        for btn in (self.rb_mode_online, self.rb_mode_offline):
+            btn.toggled.connect(self._apply_offline_desktop_limit)
         self.stack.setCurrentIndex(0)
 
     def _mark_recommended_options(self):
@@ -1318,6 +1334,8 @@ class Wizard(QWidget):
             self.rb_mode_online.setChecked(False)
             self.net_label.setText(self.t['net_missing_offline_hint'])
 
+        self._apply_offline_desktop_limit()
+
         mem_mib = 0
         try:
             with open('/proc/meminfo') as fh:
@@ -1333,6 +1351,31 @@ class Wizard(QWidget):
         self._req_row(2, self.t['req_disk'], bool(disks))
         self._req_row(3, f"{self.t['req_memory']} ({mem_mib} MiB)",
                       mem_mib >= 1024)
+
+    def _apply_offline_desktop_limit(self):
+        """The medium only bundles the minimal desktop.
+
+        Embedding the whole plasma group pushed the ISO past 5 GB for a desktop
+        most offline installs do not need. The full variant stays selectable
+        online, where the packages can simply be downloaded.
+
+        Switching to offline swaps the selection to the minimal desktop, but
+        the previous choice is remembered so returning to online restores it
+        rather than silently downgrading what the user asked for.
+        """
+        offline = self.rb_mode_offline.isChecked()
+        self.rb_desktop_full.setEnabled(not offline)
+        if offline:
+            if self.rb_desktop_full.isChecked():
+                self._desktop_wanted_full = True
+                self.rb_desktop_minimal.setChecked(True)
+            self.rb_desktop_full.setToolTip(
+                self.t['desktop_full_offline_hint'])
+        else:
+            self.rb_desktop_full.setToolTip(self.t['desktop_full_hint'])
+            if self._desktop_wanted_full:
+                self.rb_desktop_full.setChecked(True)
+                self._desktop_wanted_full = False
 
     def show_location(self):
         self.install_mode = 'online' if self.rb_mode_online.isChecked() \

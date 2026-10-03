@@ -1,1 +1,1 @@
-/etc/systemd/system/refresh-orinos-repo.service
+../refresh-orinos-repo.service

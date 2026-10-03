@@ -71,22 +71,25 @@ cp "${REPO_ROOT}/packages/os/x86_64/orinos.db.tar.gz" "${EMBED_DIR}/x86_64/"
 
 # Offline package cache. mkarchiso runs `pacstrap -c`, which installs from the
 # host cache and leaves nothing in the airootfs, so the medium ships no
-# packages of its own unless they are embedded here. The cache has to be built
-# before the profile is assembled, because it lives inside the profile tree.
+# packages of its own unless they are embedded here.
+#
+# The cache must land in the assembled profile under work/, because that is the
+# tree mkarchiso reads — the source profiles/ directory was copied above and is
+# no longer the one being built.
 #
 # One privileged run is enough: build-offline-cache.py loops until the whole
 # closure is satisfied, so newly discovered dependencies do not need a second
 # escalation. Fetching needs write access to /var/cache/pacman/pkg, which on a
 # stock Arch host means root; copying the files out of that cache needs none,
 # which is why the collect step runs unprivileged afterwards.
-if ! "${REPO_ROOT}/build-offline-cache.py" --fetch-only "${MODE}"; then
+if ! "${REPO_ROOT}/build-offline-cache.py" --fetch-only "${MODE}" "${PROFILE}"; then
     echo "==> Retrying the download with sudo"
-    sudo "${REPO_ROOT}/build-offline-cache.py" --fetch-only "${MODE}" || {
+    sudo "${REPO_ROOT}/build-offline-cache.py" --fetch-only "${MODE}" "${PROFILE}" || {
         echo "==> Could not download the packages needed for offline install." >&2
         exit 1
     }
 fi
-"${REPO_ROOT}/build-offline-cache.py" "${MODE}" || {
+"${REPO_ROOT}/build-offline-cache.py" "${MODE}" "${PROFILE}" || {
     echo "==> Offline cache incomplete; the ISO would not install offline." >&2
     exit 1
 }
