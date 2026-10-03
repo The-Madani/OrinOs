@@ -18,4 +18,8 @@ echo "== ISO profile =="
 python3 "${TESTS_DIR}/test_iso_profile.py"
 
 echo
+echo "== branding =="
+python3 "${TESTS_DIR}/test_branding.py"
+
+echo
 echo "All installer tests passed."
