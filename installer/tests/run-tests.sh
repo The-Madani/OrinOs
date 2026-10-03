@@ -14,4 +14,8 @@ echo "== frontend =="
 QT_QPA_PLATFORM=offscreen python3 "${TESTS_DIR}/test_installer_gui.py"
 
 echo
+echo "== ISO profile =="
+python3 "${TESTS_DIR}/test_iso_profile.py"
+
+echo
 echo "All installer tests passed."

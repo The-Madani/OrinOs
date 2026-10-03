@@ -69,6 +69,13 @@ mkdir -p "${EMBED_DIR}/x86_64"
 cp "${REPO_ROOT}/packages/os/x86_64/"*.pkg.tar.zst "${EMBED_DIR}/x86_64/"
 cp "${REPO_ROOT}/packages/os/x86_64/orinos.db.tar.gz" "${EMBED_DIR}/x86_64/"
 
+# packages.x86_64 is layered per mode: the mode file may REPLACE the
+# common file on a naive cp, so merge the two lists explicitly
+# (common first, then mode extras; duplicates removed, order kept).
+sort -u -o "${PROFILE}/packages.x86_64" \
+    <(cat "${REPO_ROOT}/profiles/common/packages.x86_64") \
+    <(cat "${REPO_ROOT}/profiles/${MODE}/packages.x86_64")
+
 echo "==> Assembled ${MODE} profile at ${PROFILE}"
 cd "${PROFILE}"
 
