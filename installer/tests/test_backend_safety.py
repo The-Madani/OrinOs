@@ -7,6 +7,7 @@ installer environment. This exercises the safety layer: pre-flight checks,
 package ordering and the encrypted-root wiring.
 """
 import importlib.util
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -113,6 +114,29 @@ check('base_packages repeats archinstall defaults',
 check('no redundant mkinitcpio -P call', 'mkinitcpio -P' not in src)
 check('verify_install inspects the initramfs with lsinitcpio',
       'lsinitcpio' in src)
+
+# --- every package we ask for must actually exist ---------------------------
+# A typo here is invisible until an install dies deep in pacman, which is why
+# it is checked here instead. Our own packages are exempt: they come from the
+# [orinos] repository, not from Arch.
+wanted = list(backend.BASE_PACKAGES) + list(backend.PRE_INITRAMFS_PACKAGES)
+for variant in backend.DESKTOP_PACKAGES:
+    wanted += backend.DESKTOP_PACKAGES[variant]
+
+unknown = []
+for name in sorted(set(wanted)):
+    if name.startswith('orinos-'):
+        continue
+    info = subprocess.run(['pacman', '-Si', name],
+                          capture_output=True, text=True)
+    if info.returncode != 0:
+        group = subprocess.run(['pacman', '-Spg', name],
+                               capture_output=True, text=True)
+        if group.returncode != 0 or not group.stdout.strip():
+            unknown.append(name)
+
+check('every package the installer requests exists', not unknown,
+      f'do not exist in any repository: {unknown}')
 
 # --- offline install --------------------------------------------------------
 with tempfile.TemporaryDirectory() as tmp:

@@ -43,7 +43,7 @@ DESKTOP_PACKAGES = [
     'orinos-branding', 'orinos-desktop',
     # Both variants: the user chooses on the disk page, and offline there is
     # no way to fetch what the other choice would have needed.
-    'plasma-desktop', 'plasma-session', 'konsole',
+    'plasma-desktop', 'konsole', 'dolphin',
     # The full 'plasma' group, which is what DESKTOP_PACKAGES['full'] installs.
     'plasma',
 ]

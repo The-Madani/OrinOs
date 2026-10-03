@@ -97,11 +97,14 @@ PRE_INITRAMFS_PACKAGES = [
 ]
 
 DESKTOP_PACKAGES = {
-    # Minimal Plasma: core desktop + session, terminal, file manager.
+    # Minimal Plasma: core desktop, terminal and file manager.
+    # plasma-desktop pulls in plasma-workspace (which carries kwin, the
+    # session and the applets), so naming a session package separately would
+    # only risk naming one that does not exist.
     'minimal': [
         'plasma-desktop',
-        'plasma-session',
         'konsole',
+        'dolphin',
     ],
     # Full Plasma: the complete 'plasma' group (apps, system settings, ...).
     # Recommended for most users.
