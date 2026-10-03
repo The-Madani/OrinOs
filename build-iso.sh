@@ -69,6 +69,16 @@ mkdir -p "${EMBED_DIR}/x86_64"
 cp "${REPO_ROOT}/packages/os/x86_64/"*.pkg.tar.zst "${EMBED_DIR}/x86_64/"
 cp "${REPO_ROOT}/packages/os/x86_64/orinos.db.tar.gz" "${EMBED_DIR}/x86_64/"
 
+# The [orinos] Server line in the profile pacman.conf points at
+# /orinos-repo — a path that exists inside the live system but NOT on the
+# build host. Build-time pacstrap runs on the host, so rewrite the URL to
+# the host repository copy for the build only (the shipped airootfs keeps
+# the runtime path, because only the profile-root pacman.conf is read by
+# mkarchiso; the live /etc/pacman.conf comes from the pacman package).
+sed -i \
+    "s|^Server = file:///orinos-repo/x86_64$|Server = file://${REPO_ROOT}/packages/os/x86_64|" \
+    "${PROFILE}/pacman.conf"
+
 # packages.x86_64 is layered per mode: the mode file may REPLACE the
 # common file on a naive cp, so merge the two lists explicitly
 # (common first, then mode extras; duplicates removed, order kept).

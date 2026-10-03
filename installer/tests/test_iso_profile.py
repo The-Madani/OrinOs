@@ -34,6 +34,18 @@ check('the merge keeps the common list',
       'profiles/common/packages.x86_64' in build_iso,
       'the common list is not part of the merge')
 
+# The [orinos] repository ships on the medium and is served from
+# /orinos-repo at runtime. Build-time pacstrap runs on the host, where that
+# path does not exist, so the profile copy has to be rewritten to the host
+# path. Losing that rewrite makes pacman look for the database at a path that
+# only exists on the installed machine.
+check('build-iso.sh rewrites the [orinos] URL for the build host',
+      's|^Server = file:///orinos-repo/x86_64$' in build_iso,
+      'the profile would point at /orinos-repo, which does not exist here')
+check('the rewrite targets the profile pacman.conf',
+      '"${PROFILE}/pacman.conf"' in build_iso,
+      'the rewrite must apply to the assembled profile')
+
 with tempfile.TemporaryDirectory() as tmp:
     for mode in MODES:
         profile = Path(tmp) / mode
@@ -76,7 +88,33 @@ with tempfile.TemporaryDirectory() as tmp:
               has_plasma == (mode == 'desktop'),
               'the terminal profile must not pull in the desktop')
 
+        # The repository database has to exist for the rewrite above to point
+        # at something; a missing one fails the sync with "Could not open file".
+        db = REPO / 'packages' / 'os' / 'x86_64' / 'orinos.db.tar.gz'
+        check(f'{mode}: the [orinos] database is built', db.is_file(),
+              f'{db} is missing; run packages/build-repo.sh')
+
         print(f'      ({mode}: {len(merged)} packages)')
+
+# Every step the assembly depends on must be present. Three separate build
+# failures came from a step going missing while another part of the script was
+# edited, so each one is named explicitly rather than inferred.
+for step, needle, why in [
+        ('layers the common profile',
+         'cp -a "${REPO_ROOT}/profiles/common/."', 'base system and boot mode'),
+        ('layers the mode profile',
+         'cp -a "${REPO_ROOT}/profiles/${MODE}/."', 'the desktop'),
+        ('embeds the [orinos] repository',
+         'orinos.db.tar.gz', 'orinos-branding and orinos-installer'),
+        ('rewrites the repository URL',
+         'Server = file://${REPO_ROOT}/packages/os/x86_64', 'build-time sync'),
+        ('merges the package lists',
+         'sort -u -o "${PROFILE}/packages.x86_64"', 'syslinux, linux, base'),
+        ('runs mkarchiso on the assembled profile',
+         'mkarchiso -v', 'the ISO itself'),
+]:
+    check(f'build-iso.sh {step}', needle in build_iso,
+          f'missing: {why} would be dropped')
 
 print()
 if failures:
