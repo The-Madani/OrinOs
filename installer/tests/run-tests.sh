@@ -10,6 +10,10 @@ echo "== backend safety =="
 python3 "${TESTS_DIR}/test_backend_safety.py"
 
 echo
+echo "== arch_chroot shell usage =="
+python3 "${TESTS_DIR}/test_chroot_calls.py"
+
+echo
 echo "== frontend =="
 QT_QPA_PLATFORM=offscreen python3 "${TESTS_DIR}/test_installer_gui.py"
 

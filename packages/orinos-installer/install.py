@@ -35,6 +35,7 @@ pacman.conf keeps consuming the [orinos] repository after reboot.
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -129,6 +130,7 @@ def load_plan(path: Path) -> dict:
     plan.setdefault('desktop', 'full')
     if plan['desktop'] not in DESKTOP_PACKAGES:
         raise ValueError(f'unknown desktop variant: {plan["desktop"]}')
+    plan.setdefault('install_mode', 'online')
     plan.setdefault('timezone', 'UTC')
     plan.setdefault('keyboard', 'us')
     plan.setdefault('locale', 'en_US.UTF-8')
@@ -141,17 +143,70 @@ def load_plan(path: Path) -> dict:
     plan.setdefault('disk_label', 'orinos')
     plan.setdefault('full_name', '')
     plan.setdefault('root_password', '')
+    _validate_plan(plan)
     return plan
 
 
-def _build_encryption(plan: dict) -> DiskEncryption | None:
-    """LUKS encryption when the plan requests it, else None."""
+USERNAME_RE = re.compile(r'^[a-z_][a-z0-9_-]{0,31}$')
+HOSTNAME_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$')
+LOCALE_RE = re.compile(r'^[A-Za-z]{2,3}_[A-Za-z]{2}(\.[A-Za-z0-9-]+)?(@\w+)?$')
+TZ_RE = re.compile(r'^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+){0,2}$')
+KEYMAP_RE = re.compile(r'^[A-Za-z0-9_.-]+$')
+
+
+def _validate_plan(plan: dict) -> None:
+    """Reject values that are later interpolated into commands or files.
+
+    The plan comes from a GUI or is hand-written; none of these fields may
+    carry whitespace, quotes or shell metacharacters.
+    """
+    if not USERNAME_RE.match(plan['user']):
+        raise ValueError(f'invalid user name: {plan["user"]!r}')
+    if not HOSTNAME_RE.match(plan['hostname']):
+        raise ValueError(f'invalid hostname: {plan["hostname"]!r}')
+    if not LOCALE_RE.match(plan['locale']):
+        raise ValueError(f'invalid locale: {plan["locale"]!r}')
+    if not TZ_RE.match(plan['timezone']):
+        raise ValueError(f'invalid timezone: {plan["timezone"]!r}')
+    if not KEYMAP_RE.match(plan['keyboard']):
+        raise ValueError(f'invalid keyboard layout: {plan["keyboard"]!r}')
+    if not str(plan['disk']).startswith('/dev/'):
+        raise ValueError(f'disk must be a /dev path: {plan["disk"]!r}')
+    full_name = plan.get('full_name') or ''
+    if any(c in full_name for c in ':\n\r,='):
+        raise ValueError('full_name must not contain : , = or newlines')
+    for key in ('password', 'root_password'):
+        value = plan.get(key) or ''
+        if '\n' in value or '\r' in value:
+            raise ValueError(f'{key} must not contain newlines')
+    swap_mib = plan.get('swap_size_mib', 0)
+    if not isinstance(swap_mib, int) or swap_mib < 0:
+        raise ValueError('swap_size_mib must be a non-negative integer')
+    enc = plan.get('encryption')
+    if enc and not enc.get('password'):
+        raise ValueError('encryption requires a non-empty password')
+
+
+def _build_encryption(plan: dict, modification: DeviceModification
+                      ) -> DiskEncryption | None:
+    """LUKS encryption when the plan requests it, else None.
+
+    archinstall only encrypts the partitions listed in ``partitions`` and
+    refuses an empty list for plain LUKS. The root partition is encrypted;
+    /boot stays readable so the bootloader can load the kernel.
+    """
     spec = plan.get('encryption')
     if not spec:
         return None
+    to_encrypt = [p for p in modification.partitions
+                  if p.mountpoint == Path('/')]
+    if not to_encrypt:
+        raise ValueError('encryption requested but the plan has no / '
+                         'partition to encrypt')
     return DiskEncryption(
         encryption_type=EncryptionType.LUKS,
         encryption_password=Password(plaintext=spec['password']),
+        partitions=to_encrypt,
     )
 
 
@@ -168,6 +223,9 @@ def build_disk_layout(plan: dict) -> DiskLayoutConfiguration:
     modification = DeviceModification(device, wipe=wipe)
 
     existing = {str(info.path): info for info in device.partition_infos}
+    # Keep 1 MiB free at the end: the backup GPT header lives there, and
+    # archinstall rejects a partition that overlaps it.
+    usable_end = disk_end.gpt_end()
 
     for entry in plan['partitions']:
         mp = entry.get('mountpoint')
@@ -177,8 +235,18 @@ def build_disk_layout(plan: dict) -> DiskLayoutConfiguration:
             start = Size(int(entry.get('start_mib', 0)), Unit.MiB,
                          sector_size)
             size_mib = int(entry.get('size_mib', 0))
-            length = (disk_end - start if size_mib <= 0
-                      else Size(size_mib, Unit.MiB, sector_size))
+            if size_mib > 0:
+                length = Size(size_mib, Unit.MiB, sector_size)
+            else:
+                # "Rest of the free gap": stop at the next existing
+                # partition after `start` (dual-boot), else at the disk end.
+                limit = usable_end
+                if not wipe:
+                    later = [i.start for i in device.partition_infos
+                             if i.start > start]
+                    if later:
+                        limit = min(later)
+                length = (limit - start).align()
             fs_type = FilesystemType(entry['fs'])
             flags = []
             # ESP flag makes archinstall mount the ESP in the target's
@@ -224,7 +292,7 @@ def build_disk_layout(plan: dict) -> DiskLayoutConfiguration:
     return DiskLayoutConfiguration(
         config_type=DiskLayoutType.Default,
         device_modifications=[modification],
-        disk_encryption=_build_encryption(plan),
+        disk_encryption=_build_encryption(plan, modification),
     )
 
 
@@ -259,6 +327,12 @@ def run(cmd: list) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
+def findmnt_value(mountpoint: Path, column: str) -> str:
+    """Single findmnt column for the filesystem mounted at `mountpoint`."""
+    proc = run(['findmnt', '-n', '-o', column, '--target', str(mountpoint)])
+    return proc.stdout.strip() if proc.returncode == 0 else ''
+
+
 def check_not_busy(disk: str) -> None:
     """Refuse to touch a disk that is mounted, in use or has holders.
 
@@ -266,22 +340,34 @@ def check_not_busy(disk: str) -> None:
     disk with active holders (LVM, mdraid, dm-crypt) must be torn down by the
     operator first -- guessing here loses data.
     """
-    base = disk.rsplit('/', 1)[-1]
+    proc = run(['lsblk', '-nrpo', 'NAME,TYPE,MOUNTPOINTS', disk])
+    if proc.returncode != 0:
+        raise PreflightError(
+            f'lsblk could not inspect {disk}: {proc.stderr.strip()}')
 
-    mounted = run(['lsblk', '-nrpo', 'MOUNTPOINT', disk]).stdout.split()
-    mounted = [m for m in mounted if m]
+    mounted = []
+    holders = []
+    for line in proc.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        name, kind, mounts = fields[0], fields[1], fields[2:]
+        # lsblk lists the disk's *children*; anything that is neither the
+        # disk itself nor a plain partition is a stacked device on top of
+        # it (LVM, mdraid, dm-crypt, multipath ...).
+        if kind not in ('disk', 'part'):
+            holders.append(f'{name} ({kind})')
+        mounted += mounts
+
     if mounted:
         raise PreflightError(
-            f'{disk} has mounted partitions: {", ".join(mounted)}. '
-            'Unmount them before installing.')
-
-    holders = run(['lsblk', '-nrpo', 'NAME', disk, '--inverse']).stdout
-    holders = [h for h in holders.split() if h.startswith('/dev/')
-               and h != disk]
+            f'{disk} has mounted partitions or active swap: '
+            f'{", ".join(sorted(set(mounted)))}. Unmount them before '
+            'installing.')
     if holders:
         raise PreflightError(
-            f'{disk} is in use by {", ".join(holders)} (LVM, RAID or '
-            'encrypted mapping). Tear those down before installing.')
+            f'{disk} is in use by {", ".join(holders)}. Tear down the '
+            'LVM / RAID / encrypted mappings before installing.')
 
 
 def check_target_empty(mountpoint: Path) -> None:
@@ -298,7 +384,7 @@ def check_target_empty(mountpoint: Path) -> None:
 
 def check_boot_mode() -> str:
     """Return 'uefi' or 'bios'; the bootloader must match the firmware."""
-    if Path('/sys/firmware/efi/efivars').is_dir():
+    if Path('/sys/firmware/efi').is_dir():
         return 'uefi'
     return 'bios'
 
@@ -317,12 +403,9 @@ def preflight(plan: dict, mountpoint: Path) -> str:
     if not Path(disk).exists():
         raise PreflightError(f'Target disk {disk} does not exist.')
 
-    if plan['wipe']:
-        check_not_busy(disk)
-    else:
-        # Dual-boot only adds mountpoints to partitions that are not part of
-        # OrinOs; still refuse if the *target* disk is mounted somewhere.
-        check_not_busy(disk)
+    # Both modes: partitioning or formatting under a mounted filesystem
+    # corrupts it, and dual-boot still rewrites the partition table.
+    check_not_busy(disk)
 
     check_target_empty(mountpoint)
 
@@ -340,7 +423,7 @@ def preflight(plan: dict, mountpoint: Path) -> str:
             'Encrypted root requires UEFI firmware for the bootloader to '
             'unlock it at boot; this machine is in BIOS mode.')
 
-    if plan['install_mode'] == 'offline':
+    if plan.get('install_mode', 'online') == 'offline':
         raise PreflightError(
             'This installer cannot install without a network connection. '
             'Connect the machine to the internet and start the installer '
@@ -372,6 +455,10 @@ def main() -> None:
     print(f'OrinOs installer backend starting '
           f'(uid={os.geteuid()}, python={sys.version.split()[0]})', flush=True)
 
+    if os.geteuid() != 0:
+        print('This installer must run as root.', file=sys.stderr)
+        sys.exit(1)
+
     plan = load_plan(Path(sys.argv[1]))
     repo_url = plan['repo_url']
     mountpoint = Path('/mnt')
@@ -402,7 +489,8 @@ def main() -> None:
     try:
         _install(plan, disk_config, mirror_list_handler, mirror_config,
                  repo_url, mountpoint, firmware)
-    except Exception:
+    except BaseException:
+        # (BaseException so Ctrl-C mid-pacstrap is cleaned up as well.)
         # The Installer context manager already unmounts on a clean exit, but
         # a hard failure (or a KeyboardInterrupt mid-pacstrap) can leave the
         # tree mounted. Tear it down so a retry starts from a clean slate
@@ -433,47 +521,96 @@ def _install(plan, disk_config, mirror_list_handler, mirror_config,
         installation.mount_ordered_layout()
 
         # A file:// [orinos] repo only exists in the live system; copy it
-        # into the target so the installed system's pacman.conf keeps
+        # into the target (at the SAME path, because pacman.conf will say
+        # file:///orinos-repo/x86_64) so the installed system keeps
         # resolving it after reboot. HTTP(S) URLs need no copy.
         if repo_url.startswith('file://'):
             src = Path(repo_url[len('file://'):])
             if src.is_dir():
-                shutil.copytree(src, installation.target / 'orinos-repo')
+                dest = installation.target / src.relative_to('/')
+                shutil.copytree(src, dest, dirs_exist_ok=True)
 
         stage('base-system')
         installation.minimal_installation(hostname=plan['hostname'])
 
+        # minimal_installation() leaves the target with the stock
+        # pacman.conf; without this call [orinos] only exists on the live
+        # system and `pacman -Syu` after reboot never sees OrinOs packages.
+        installation.set_mirrors(mirror_list_handler, mirror_config,
+                                 on_target=True)
+
         # Locale, timezone and keyboard layout as picked in the GUI.
+        # archinstall's arch_chroot() does NOT run a shell (the command is
+        # shlex-split), so '>', '&&', '||' and '|' would be passed to the
+        # program as literal arguments. Plain files are written from Python.
         locale, timezone, keyboard = (
             plan['locale'], plan['timezone'], plan['keyboard'])
+        target = installation.target
+
+        (target / 'etc/locale.conf').write_text(f'LANG={locale}\n')
+        # Keep the FONT= line archinstall wrote; only replace KEYMAP=.
+        vconsole = target / 'etc/vconsole.conf'
+        kept = [ln for ln in (vconsole.read_text().splitlines()
+                              if vconsole.is_file() else [])
+                if not ln.startswith('KEYMAP=')]
+        vconsole.write_text('\n'.join([f'KEYMAP={keyboard}'] + kept) + '\n')
+
+        localtime = target / 'etc/localtime'
+        localtime.unlink(missing_ok=True)
         installation.arch_chroot(
-            f'printf "%s\\n" "LANG={locale}" > /etc/locale.conf')
-        installation.arch_chroot(
-            f'ln -sf /usr/share/zoneinfo/{timezone} /etc/localtime')
-        installation.arch_chroot(
-            f'printf "%s\\n" "KEYMAP={keyboard}" > /etc/vconsole.conf')
-        installation.arch_chroot(
-            f'printf "%s\\n" "XKBMODEL=pc105" "LAYOUT={keyboard}" '
-            '> /etc/default/keyboard')
+            f'ln -s /usr/share/zoneinfo/{shlex.quote(timezone)} '
+            '/etc/localtime')
+
+        # X11/SDDM layout. /etc/default/keyboard is Debian-only; on Arch the
+        # equivalent is an xorg.conf.d snippet.
+        xorg_dir = target / 'etc/X11/xorg.conf.d'
+        xorg_dir.mkdir(parents=True, exist_ok=True)
+        (xorg_dir / '00-keyboard.conf').write_text(
+            'Section "InputClass"\n'
+            '    Identifier "system-keyboard"\n'
+            '    MatchIsKeyboard "on"\n'
+            f'    Option "XkbLayout" "{keyboard}"\n'
+            'EndSection\n')
 
         # Writing LANG into /etc/locale.conf is not enough: the locale itself
-        # only exists after locale-gen has compiled it. Without this the
-        # Persian install boots with a LANG that resolves to nothing and every
-        # program falls back to the C locale.
-        installation.arch_chroot(
-            f'printf "%s\\n" "{locale}" "{locale}" > /etc/locale.gen && '
-            'locale-gen >/dev/null')
+        # only exists after locale-gen has compiled it. locale.gen lines are
+        # "<name> <charset>" (not the bare name), and en_US stays available
+        # as a fallback for programs that do not ship the chosen locale.
+        wanted = []
+        for loc in (locale, 'en_US.UTF-8'):
+            charset = loc.split('.', 1)[1].split('@')[0] \
+                if '.' in loc else 'UTF-8'
+            line = f'{loc} {charset}'
+            if line not in wanted:
+                wanted.append(line)
+        (target / 'etc/locale.gen').write_text('\n'.join(wanted) + '\n')
+        installation.arch_chroot('locale-gen')
+
+        # What is actually mounted at / decides how swap and the label are
+        # handled; plan['root_fs'] is only a hint and can disagree with the
+        # partition list.
+        root_fs = findmnt_value(mountpoint, 'FSTYPE') or plan['root_fs']
 
         # Swap: either a swap partition (created by the GUI as a partition
-        # with mountpoint None) or a swapfile sized by the plan.
-        if plan.get('swap') == 'swapfile' and plan.get('swap_size_mib', 0) > 0:
-            installation.arch_chroot(
-                f'dd if=/dev/zero of=/swapfile bs=1M '
-                f'count={plan["swap_size_mib"]} status=none && '
-                f'chmod 600 /swapfile && mkswap /swapfile >/dev/null && '
-                f'swapon /swapfile && '
-                f'printf "/swapfile none swap defaults 0 0\\n" '
-                f'>> /etc/fstab')
+        # with mountpoint None) or a swapfile sized by the plan. The file is
+        # only created and listed in fstab; swapon inside the chroot is
+        # pointless and the swap is enabled by fstab on first boot.
+        swap_mib = int(plan.get('swap_size_mib', 0))
+        if plan.get('swap') == 'swapfile' and swap_mib > 0:
+            if root_fs == 'btrfs':
+                # A plain dd file on btrfs is a COW file and swapon rejects
+                # it; mkswapfile creates a correct NOCOW one.
+                installation.arch_chroot(
+                    f'btrfs filesystem mkswapfile --size {swap_mib}m '
+                    '/swapfile')
+            else:
+                installation.arch_chroot(
+                    f'dd if=/dev/zero of=/swapfile bs=1M '
+                    f'count={swap_mib} status=none')
+                installation.arch_chroot('chmod 600 /swapfile')
+                installation.arch_chroot('mkswap /swapfile')
+            with open(target / 'etc/fstab', 'a') as fstab:
+                fstab.write('/swapfile none swap defaults 0 0\n')
 
         stage('packages')
         installation.add_additional_packages(
@@ -484,18 +621,24 @@ def _install(plan, disk_config, mirror_list_handler, mirror_config,
         # Optional automatic desktop login (off by default, like every
         # mainstream distro: a password-protected session is the default).
         if plan.get('autologin'):
-            installation.arch_chroot(
-                'mkdir -p /etc/sddm.conf.d && printf "%s\\n" '
-                f'"[Autologin]" "User={plan["user"]}" "Session=plasma" '
-                '"Relogin=true" > /etc/sddm.conf.d/00-autologin.conf'
-            )
+            sddm_dir = target / 'etc/sddm.conf.d'
+            sddm_dir.mkdir(parents=True, exist_ok=True)
+            (sddm_dir / '00-autologin.conf').write_text(
+                '[Autologin]\n'
+                f'User={plan["user"]}\n'
+                'Session=plasma\n'
+                'Relogin=true\n')
 
         # GRUB names its menu entry from GRUB_DISTRIBUTOR (not os-release);
         # set it before add_bootloader so grub-mkconfig writes "OrinOs".
-        installation.arch_chroot(
-            'sed -i \'s/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="OrinOs"/\' '
-            '/etc/default/grub'
-        )
+        grub_default = target / 'etc/default/grub'
+        if grub_default.is_file():
+            text = grub_default.read_text()
+            text, n = re.subn(r'(?m)^GRUB_DISTRIBUTOR=.*$',
+                              'GRUB_DISTRIBUTOR="OrinOs"', text)
+            if n == 0:
+                text += '\nGRUB_DISTRIBUTOR="OrinOs"\n'
+            grub_default.write_text(text)
 
         stage('bootloader')
         boot_choice = plan.get('bootloader', 'grub')
@@ -519,27 +662,36 @@ def _install(plan, disk_config, mirror_list_handler, mirror_config,
                 sudo=True,
             ),
         )
+        # usermod -c is the root-side way to set GECOS (chfn can ask for
+        # authentication, and the old "2>/dev/null || true" tail was handed
+        # to chfn as arguments because there is no shell here).
         installation.arch_chroot(
-            f'chfn -f {shlex.quote(gecos)} {shlex.quote(username)} '
-            '2>/dev/null || true')
+            f'usermod -c {shlex.quote(gecos)} {shlex.quote(username)}')
+
         if plan.get('root_password'):
-            installation.arch_chroot(
-                f'echo {username}:{plan["root_password"]} | chpasswd -e')
+            # Set the *root* password (the old code changed the user's), in
+            # plaintext through stdin so it never appears in a command line.
+            subprocess.run(
+                ['arch-chroot', '-S', str(target), 'chpasswd'],
+                input=f'root:{plan["root_password"]}\n', text=True,
+                check=True)
+
+        # orinos-desktop applies the OrinOs wallpaper and colour scheme from
+        # a user unit, so it has to be enabled inside the user's home or the
+        # account would boot into stock Breeze. Done as the user (before the
+        # shell switch below) so every directory has the right owner, and
+        # including default.target.wants, which the old code never created.
+        unit_dir = f'/home/{username}/.config/systemd/user'
+        installation.arch_chroot(
+            f'runuser -u {username} -- mkdir -p {unit_dir}/default.target.wants')
+        installation.arch_chroot(
+            f'runuser -u {username} -- ln -sf '
+            '/usr/lib/systemd/user/orinos-desktop.service '
+            f'{unit_dir}/default.target.wants/orinos-desktop.service')
 
         # archinstall's User model has no shell field and useradd defaults
         # to bash; fish is in BASE_PACKAGES so make it the login shell.
         installation.arch_chroot(f'usermod -s /usr/bin/fish {username}')
-
-        # orinos-desktop applies the OrinOs wallpaper and colour scheme from
-        # a user unit, so it has to be enabled inside the user's home or the
-        # account would boot into stock Breeze.
-        installation.arch_chroot(
-            'install -d -m 700 -o {u} -g {u} /home/{u}/.config/systemd/user'
-            .format(u=shlex.quote(username)))
-        installation.arch_chroot(
-            'ln -sf /usr/lib/systemd/user/orinos-desktop.service '
-            '/home/{u}/.config/systemd/user/default.target.wants/'
-            'orinos-desktop.service'.format(u=shlex.quote(username)))
 
         # orinos-branding places /etc/os-release + /etc/issue via a rule in
         # /etc/tmpfiles.d (higher precedence than Arch's /usr/lib rule, which
@@ -551,15 +703,20 @@ def _install(plan, disk_config, mirror_list_handler, mirror_config,
         )
 
         # Volume label on the root filesystem so it is identifiable in a
-        # file manager or parted. FAT/ext use different tools than btrfs.
-        label = (plan.get('disk_label') or 'orinos')[:16]
-        root_fs = plan.get('root_fs', 'ext4')
-        label_tool = 'btrfs filesystem label' if root_fs == 'btrfs' else 'e2label'
-        installation.arch_chroot(
-            f'root_dev=$(findmnt -n -o SOURCE / 2>/dev/null); '
-            f'if [ -n "$root_dev" ]; then '
-            f'  {label_tool} "$root_dev" {shlex.quote(label)} 2>/dev/null || true; '
-            f'fi')
+        # file manager or parted. Done from the host against the real mount:
+        # inside the chroot findmnt reports btrfs sources as /dev/x[/@] and
+        # the old script needed a shell for its if/fi, which does not exist.
+        label = (plan.get('disk_label') or 'orinos')
+        root_dev = (findmnt_value(mountpoint, 'SOURCE') or '').split('[')[0]
+        if root_dev and root_fs.startswith('ext'):
+            r = run(['e2label', root_dev, label[:16]])
+        elif root_dev and root_fs == 'btrfs':
+            r = run(['btrfs', 'filesystem', 'label', str(mountpoint), label])
+        else:
+            r = None  # xfs/f2fs/... cannot be relabelled while mounted
+        if r is not None and r.returncode != 0:
+            print(f'WARNING: could not set volume label: {r.stderr.strip()}',
+                  file=sys.stderr)
 
         verify_install(plan, mountpoint, firmware)
 
@@ -593,7 +750,8 @@ def verify_install(plan: dict, mountpoint: Path, firmware: str) -> None:
                   ['test', '-e', str(mountpoint / 'boot/grub/i386-pc')])
     elif boot_choice == 'systemd-boot':
         check('systemd-boot loader',
-              ['test', '-e', str(mountpoint / 'boot/loader/loader.efi')])
+              ['test', '-e', str(mountpoint /
+                                 'boot/EFI/systemd/systemd-bootx64.efi')])
 
     if plan.get('encryption'):
         # The encrypt hook does `add_binary cryptsetup`; if cryptsetup was
@@ -603,7 +761,9 @@ def verify_install(plan: dict, mountpoint: Path, firmware: str) -> None:
         initramfs = mountpoint / 'boot/initramfs-linux.img'
         if initramfs.is_file():
             listing = run(['lsinitcpio', str(initramfs)])
-            entries = listing.stdout.splitlines()
+            # lsinitcpio prints symlinks as "path -> target".
+            entries = [e.split(' -> ')[0].strip().lstrip('./')
+                       for e in listing.stdout.splitlines()]
             if listing.returncode != 0:
                 problems.append(
                     f'initramfs unreadable: {listing.stderr.strip()}')
