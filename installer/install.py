@@ -138,30 +138,9 @@ def load_plan(path: Path) -> dict:
     plan.setdefault('root_fs', 'ext4')
     plan.setdefault('bootloader', 'grub')
     plan.setdefault('disk_label', 'orinos')
-    plan.setdefault('install_mode', 'online')
     plan.setdefault('full_name', '')
     plan.setdefault('root_password', '')
-
-    mode = plan['install_mode']
-    if mode not in ('online', 'offline'):
-        raise ValueError(f'unknown install mode: {mode}')
-    # An offline plan without a cache is a silent downgrade to online: the
-    # user asked for an install that needs no network and would get one that
-    # does, failing at the first download instead of up front. An empty
-    # directory is as useless as a missing one.
-    if mode == 'offline':
-        packages = (OFFLINE_CACHE.glob('*.pkg.tar.*')
-                    if OFFLINE_CACHE.is_dir() else ())
-        if not any(packages):
-            raise ValueError(
-                f'offline install requested but {OFFLINE_CACHE} holds no '
-                'packages; this medium carries no package cache')
     return plan
-
-
-# Where refresh-orinos-cache.service materializes the embedded package files
-# on the live system's tmpfs, and where the backend reads them from.
-OFFLINE_CACHE = Path('/orinos-cache')
 
 
 def _build_encryption(plan: dict) -> DiskEncryption | None:
@@ -248,22 +227,13 @@ def build_disk_layout(plan: dict) -> DiskLayoutConfiguration:
     )
 
 
-def create_mirror_config(orinos_repo_url: str,
-                         offline: bool = False) -> MirrorConfiguration:
+def create_mirror_config(orinos_repo_url: str) -> MirrorConfiguration:
     """Mirror configuration for the target's pacman.conf.
 
-    Offline installs get no Arch mirrors at all: leaving them in place would
-    let pacman reach the network and turn an offline install back into a slow,
-    half-working online one. The OrinOs repository stays either way, because it
-    ships on the medium.
+    Only the OrinOs repository is pinned. Arch's own mirrors are left to
+    archinstall, which writes a generated mirrorlist.
     """
     mirror_config = MirrorConfiguration()
-    if offline:
-        # Leaving mirror_regions empty writes no Arch servers into the target's
-        # pacman.conf, so pacman cannot reach the network at all. The package
-        # cache copied into the target is what the install consumes instead.
-        mirror_config.mirror_regions = []
-
     mirror_config.custom_repositories = [
         CustomRepository(
             name='orinos',
@@ -278,34 +248,6 @@ def create_mirror_config(orinos_repo_url: str,
 def stage(name: str) -> None:
     """Emit a machine-readable stage marker for the GUI progress bar."""
     print(f'[orinos-stage] {name}', flush=True)
-
-
-def install_offline_cache(target: Path) -> int:
-    """Copy the medium's package cache into the target before pacstrap.
-
-    pacman installs from its cache without contacting a server when every
-    package is already there, so seeding /mnt/var/cache/pacman/pkg is what
-    makes an offline install work. The cache is only needed during the
-    install, so it is removed afterwards to keep the installed system small.
-    """
-    if not OFFLINE_CACHE.is_dir():
-        raise PreflightError(
-            f'{OFFLINE_CACHE} does not exist; this medium has no package '
-            'cache. Choose online installation.')
-
-    target_cache = target / 'var/cache/pacman/pkg'
-    target_cache.mkdir(parents=True, exist_ok=True)
-
-    count = 0
-    for package in OFFLINE_CACHE.glob('*.pkg.tar.*'):
-        shutil.copy2(package, target_cache / package.name)
-        count += 1
-
-    if count == 0:
-        raise PreflightError(
-            'The offline package cache on this medium is empty.')
-
-    return count
 
 
 class PreflightError(RuntimeError):
@@ -368,46 +310,6 @@ def check_encryption_support() -> None:
             'used. Reinstall without encryption or add the package.')
 
 
-def check_offline_cache(plan: dict) -> None:
-    """Refuse an offline install the medium cannot actually perform.
-
-    The cache is built for one package set. Asking for a desktop variant whose
-    packages were never embedded would fail deep inside pacman, so the exact
-    package list is checked here instead.
-    """
-    wanted = list(BASE_PACKAGES) + list(PRE_INITRAMFS_PACKAGES)
-    wanted += desktop_packages(plan['desktop'])
-    available = {p.name.rsplit('-', 2)[0] for p in OFFLINE_CACHE.glob('*.pkg.tar.*')}
-
-    missing = []
-    for name in wanted:
-        if name.startswith('orinos-'):
-            # Shipped from our own repository, not from the Arch cache.
-            continue
-        if name not in available and name not in offline_group_members():
-            missing.append(name)
-
-    if missing:
-        raise PreflightError(
-            'This medium cannot install the selected configuration offline; '
-            'these packages are not bundled: ' + ', '.join(sorted(missing)) +
-            '. Choose online installation instead.')
-
-
-def offline_group_members() -> set:
-    """Package names reachable only through a group like 'plasma'.
-
-    The cache stores concrete files, so a group request has to be expanded the
-    same way pacman would before it can be checked.
-    """
-    members = set()
-    for group in ('plasma',):
-        proc = run(['pacman', '-Spg', group])
-        if proc.returncode == 0:
-            members.update(proc.stdout.split())
-    return members
-
-
 def preflight(plan: dict, mountpoint: Path) -> str:
     """Run every safety check before a single byte is written."""
     disk = plan['disk']
@@ -438,11 +340,13 @@ def preflight(plan: dict, mountpoint: Path) -> str:
             'unlock it at boot; this machine is in BIOS mode.')
 
     if plan['install_mode'] == 'offline':
-        check_offline_cache(plan)
+        raise PreflightError(
+            'This installer cannot install without a network connection. '
+            'Connect the machine to the internet and start the installer '
+            'again.')
 
     print(f'Pre-flight checks passed (firmware: {mode}, '
-          f'target: {disk}, mountpoint: {mountpoint}, '
-          f'mode: {plan["install_mode"]}).')
+          f'target: {disk}, mountpoint: {mountpoint}).')
     return mode
 
 
@@ -487,8 +391,7 @@ def main() -> None:
     fs_handler.perform_filesystem_operations()
 
     mirror_list_handler = MirrorListHandler()
-    mirror_config = create_mirror_config(repo_url, offline=(
-        plan['install_mode'] == 'offline'))
+    mirror_config = create_mirror_config(repo_url)
 
     try:
         _install(plan, disk_config, mirror_list_handler, mirror_config,
@@ -531,14 +434,6 @@ def _install(plan, disk_config, mirror_list_handler, mirror_config,
             if src.is_dir():
                 shutil.copytree(src, installation.target / 'orinos-repo')
 
-        # Offline installs resolve from package files rather than from a
-        # server. They must be in place before minimal_installation runs,
-        # because that is what performs the base pacstrap.
-        if plan['install_mode'] == 'offline':
-            stage('offline-cache')
-            count = install_offline_cache(installation.target)
-            print(f'Copied {count} packages into the target cache.')
-
         stage('base-system')
         installation.minimal_installation(hostname=plan['hostname'])
 
@@ -554,6 +449,14 @@ def _install(plan, disk_config, mirror_list_handler, mirror_config,
         installation.arch_chroot(
             f'printf "%s\\n" "XKBMODEL=pc105" "LAYOUT={keyboard}" '
             '> /etc/default/keyboard')
+
+        # Writing LANG into /etc/locale.conf is not enough: the locale itself
+        # only exists after locale-gen has compiled it. Without this the
+        # Persian install boots with a LANG that resolves to nothing and every
+        # program falls back to the C locale.
+        installation.arch_chroot(
+            f'printf "%s\\n" "{locale}" "{locale}" > /etc/locale.gen && '
+            'locale-gen >/dev/null')
 
         # Swap: either a swap partition (created by the GUI as a partition
         # with mountpoint None) or a swapfile sized by the plan.
@@ -651,12 +554,6 @@ def _install(plan, disk_config, mirror_list_handler, mirror_config,
             f'if [ -n "$root_dev" ]; then '
             f'  {label_tool} "$root_dev" {shlex.quote(label)} 2>/dev/null || true; '
             f'fi')
-
-        # The cache was only needed to satisfy pacman during the install. It
-        # is several hundred megabytes and pacman prunes it on its own, but
-        # doing it here keeps the installed system's first boot predictable.
-        if plan['install_mode'] == 'offline':
-            installation.arch_chroot('rm -rf /var/cache/pacman/pkg/*')
 
         verify_install(plan, mountpoint, firmware)
 

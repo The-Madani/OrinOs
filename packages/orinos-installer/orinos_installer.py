@@ -214,10 +214,10 @@ LANGUAGES = {
         'net_ok': 'Internet connection detected.',
         'net_missing': 'No internet connection detected. An internet '
                        'connection is required to download packages.',
-        'net_missing_offline_hint': 'No internet connection detected — '
-                                 'offline installation has been '
-                                 'selected using the packages bundled on '
-                                 'this medium.',
+        'net_missing_blocked': 'No internet connection detected. '
+                               'Installation needs to download packages, so '
+                               'it cannot start until this machine is '
+                               'online.',
         'location_title': 'Location',
         'timezone': 'Time zone',
         'clock_format': 'Clock format',
@@ -295,14 +295,6 @@ LANGUAGES = {
         'root_password': 'Root password',
         'root_password_again': 'Repeat root password',
         'root_password_hint': 'Optional — leave blank to disable root login',
-        'install_mode': 'Installation mode',
-        'mode_online': 'Online (recommended)',
-        'mode_online_hint': 'Download the latest packages during install; '
-                            'requires internet.',
-        'mode_offline': 'Offline',
-        'mode_offline_hint': 'Install only what is bundled on this medium; '
-                             'works without internet but ships older '
-                             'package versions.',
         'reboot_now': 'Reboot now when finished',
         'done_release': 'Show release notes after reboot',
         'password_strength': 'Password strength',
@@ -337,7 +329,6 @@ LANGUAGES = {
                             'untouched. Continue?',
         'stage_preparing': 'Preparing…',
         'stage_partitioning': 'Partitioning the disk…',
-        'stage_offline_cache': 'Copying the offline package cache…',
         'stage_mounting': 'Mounting partitions…',
         'stage_base_system': 'Installing the base system…',
         'stage_packages': 'Downloading and installing packages…',
@@ -396,9 +387,10 @@ LANGUAGES = {
         'net_ok': 'اتصال اینترنت شناسایی شد.',
         'net_missing': 'اتصال اینترنت شناسایی نشد. برای دانلود بسته‌ها '
                        'اتصال اینترنت لازم است.',
-        'net_missing_offline_hint': 'اتصال اینترنت شناسایی نشد — نصب '
-                                 'آفلاین با بسته‌های داخل این رسانه '
-                                 'انتخاب شد.',
+        'net_missing_blocked': 'اتصال اینترنت شناسایی نشد. نصب برای '
+                               'دانلود بسته‌ها به اینترنت نیاز دارد، '
+                               'بنابراین تا وصل نشدن اینترنت نمی‌توان '
+                               'شروع شود.',
         'location_title': 'موقعیت مکانی',
         'timezone': 'منطقه زمانی',
         'clock_format': 'قالب ساعت',
@@ -476,14 +468,6 @@ LANGUAGES = {
         'root_password': 'رمز عبور root',
         'root_password_again': 'تکرار رمز عبور root',
         'root_password_hint': 'اختیاری — اگر خالی بگذارید، ورود root غیرفعال می‌ماند',
-        'install_mode': 'حالت نصب',
-        'mode_online': 'آنلاین (پیشنهادی)',
-        'mode_online_hint': 'بسته‌های روز را هنگام نصب دانلود می‌کند؛ '
-                            'نیازمند اینترنت.',
-        'mode_offline': 'آفلاین',
-        'mode_offline_hint': 'فقط بسته‌های موجود روی این رسانه نصب '
-                             'می‌شود؛ بدون اینترنت کار می‌کند ولی نسخه‌ها '
-                             'قدیمی‌تری نصب می‌کند.',
         'reboot_now': 'راه‌اندازی دوباره در پایان',
         'done_release': 'نمایش یادداشت انتشار پس از راه‌اندازی',
         'password_strength': 'قدرت رمز عبور',
@@ -517,7 +501,6 @@ LANGUAGES = {
                             'ادامه می‌دهید؟',
         'stage_preparing': 'آماده‌سازی…',
         'stage_partitioning': 'پارتیشن‌بندی دیسک…',
-        'stage_offline_cache': 'کپی کش بسته‌های آفلاین…',
         'stage_mounting': 'مانت کردن پارتیشن‌ها…',
         'stage_base_system': 'نصب سیستم پایه…',
         'stage_packages': 'دانلود و نصب بسته‌ها…',
@@ -759,7 +742,6 @@ STAGES = [
     ('preparing', 2),
     ('partitioning', 8),
     ('mounting', 3),
-    ('offline-cache', 4),
     ('base-system', 12),
     ('packages', 55),
     ('bootloader', 8),
@@ -909,7 +891,6 @@ class Wizard(QWidget):
         self.swap_mode = 'swapfile'
         self.swap_size_mib = 0
         self.autologin = False
-        self.install_mode = 'online'
         self.net_online = False
         self.full_name = ''
         self.root_password = ''
@@ -969,7 +950,6 @@ class Wizard(QWidget):
             'selected_device': self.selected_device,
             'manual_assignments': dict(self.manual_assignments),
             'created_partitions': list(self.created_partitions),
-            'install_mode': self.install_mode,
             'timezone': self.timezone,
             'clock_24h': self.clock_24h,
             'keyboard': self.keyboard,
@@ -1001,7 +981,6 @@ class Wizard(QWidget):
         self.desktop_variant = st['desktop_variant']
         self.manual_assignments = st['manual_assignments']
         self.created_partitions = st['created_partitions']
-        self.install_mode = st['install_mode']
         self.timezone = st['timezone']
         self.clock_24h = st['clock_24h']
         self.keyboard = st['keyboard']
@@ -1018,8 +997,6 @@ class Wizard(QWidget):
             idx = self.device_combo.findData(st['selected_device'])
             self.device_combo.setCurrentIndex(max(0, idx))
 
-        self.rb_mode_online.setChecked(st['install_mode'] == 'online')
-        self.rb_mode_offline.setChecked(st['install_mode'] == 'offline')
 
         if self.tz_combo.findText(self.timezone) >= 0:
             self.tz_combo.setCurrentIndex(self.tz_combo.findText(self.timezone))
@@ -1220,7 +1197,6 @@ class Wizard(QWidget):
 
     def _apply_recommended_defaults(self):
         """Preset every choice the way the docs recommend."""
-        self.rb_mode_online.setChecked(True)
         self.tz_combo.setCurrentIndex(
             max(0, self.tz_combo.findText(self.timezone)))
         self.kb_combo.setCurrentIndex(
@@ -1265,20 +1241,6 @@ class Wizard(QWidget):
         layout.addWidget(text)
         layout.addSpacing(10)
 
-        # Installation mode (EndeavourOS-style online/offline choice).
-        self.mode_group = QButtonGroup(self)
-        self.rb_mode_online = QRadioButton(self.t['mode_online'])
-        self.rb_mode_online.setToolTip(self.t['mode_online_hint'])
-        self.rb_mode_online.setChecked(True)
-        self.rb_mode_offline = QRadioButton(self.t['mode_offline'])
-        self.rb_mode_offline.setToolTip(self.t['mode_offline_hint'])
-        self.mode_group.addButton(self.rb_mode_online)
-        self.mode_group.addButton(self.rb_mode_offline)
-        layout.addWidget(QLabel(self.t['install_mode'] + ':'))
-        layout.addWidget(self.rb_mode_online)
-        layout.addWidget(self.rb_mode_offline)
-
-        layout.addSpacing(10)
         # Requirements checklist.
         self.req_table = QTableWidget(4, 2)
         self.req_table.setHorizontalHeaderLabels(
@@ -1305,18 +1267,16 @@ class Wizard(QWidget):
     def _probe_network(self):
         ok = network_online()
         self.net_online = ok
-        self.net_label.setText(self.t['net_ok'] if ok else self.t['net_missing'])
+        self.net_label.setText(
+            self.t['net_ok'] if ok else self.t['net_missing_blocked'])
         self.net_label.setStyleSheet(
             f'color: {BRAND_TEAL};' if ok else 'color: #e0a33e;')
-        # Offline mode needs no internet; online mode warns but allows.
-        self.rb_mode_online.setEnabled(True)
+        # Packages are downloaded during the install, so without a network
+        # there is nothing to install. Block the Next button rather than letting
+        # the user walk into a failure on the disk page.
+        self._next_welcome.setEnabled(ok)
         if not ok:
-            # Preselect offline: online would fail on the first download, so
-            # leaving it selected would send the user into a failure they have
-            # to diagnose rather than one they can simply avoid.
-            self.rb_mode_offline.setChecked(True)
-            self.rb_mode_online.setChecked(False)
-            self.net_label.setText(self.t['net_missing_offline_hint'])
+            self._next_welcome.setToolTip(self.t['net_missing_blocked'])
 
         mem_mib = 0
         try:
@@ -1335,8 +1295,6 @@ class Wizard(QWidget):
                       mem_mib >= 1024)
 
     def show_location(self):
-        self.install_mode = 'online' if self.rb_mode_online.isChecked() \
-            else 'offline'
         self.stack.setCurrentIndex(2)
 
     # ---------- page 2: location ----------
@@ -1826,9 +1784,6 @@ class Wizard(QWidget):
         parts = [
             line(self.t['summary_lang'],
                  'English' if self.lang == 'en' else 'فارسی'),
-            line(self.t['install_mode'],
-                 self.t['mode_online'] if self.install_mode == 'online'
-                 else self.t['mode_offline']),
             line(self.t['summary_location'], f'{self.timezone} · '
                  + (self.t['clock_24'] if self.clock_24h else self.t['clock_12'])),
             line(self.t['summary_keyboard'], self.keyboard),
@@ -1956,7 +1911,6 @@ class Wizard(QWidget):
             'autologin': self.autologin,
             'swap': self.swap_mode,
             'swap_size_mib': self.swap_size_mib,
-            'install_mode': self.install_mode,
             'root_fs': self.fs_combo.currentData(),
             'disk_label': self.label_edit.text().strip() or 'orinos',
             'bootloader': self.bootloader_combo.currentData(),

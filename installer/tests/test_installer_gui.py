@@ -117,49 +117,41 @@ check('recommended defaults survive a language switch', before == after,
 check('root filesystem default is ext4', after['fs'] == 'ext4', str(after['fs']))
 check('bootloader default is GRUB', after['boot'] == 'grub', str(after['boot']))
 
-# --- the install mode follows connectivity ----------------------------------
+# --- connectivity gates the install -----------------------------------------
+# Packages are downloaded during the install, so there is nothing to install
+# without a network. Rather than letting the user walk into a failure on the
+# disk page, the Next button is blocked and the reason is shown.
 oi.network_online = lambda: False
 wizard3 = oi.Wizard()
 wizard3._probe_network()
-check('no internet preselects offline',
-      wizard3.rb_mode_offline.isChecked() and not wizard3.rb_mode_online.isChecked(),
-      'offline should be preselected when the probe fails')
-
-# The medium only bundles the minimal desktop; the full variant is selectable
-# online but must not be choosable offline, or the install fails in pacman.
-check('offline disables the full desktop option',
-      not wizard3.rb_desktop_full.isEnabled(),
-      'full desktop must be disabled while offline')
-check('offline falls back to the minimal desktop',
-      wizard3.rb_desktop_minimal.isChecked(),
-      'minimal must be selected while offline')
-
-wizard3.rb_mode_online.setChecked(True)
-wizard3.rb_mode_offline.setChecked(False)
-app.processEvents()
-check('switching back online re-enables the full desktop',
-      wizard3.rb_desktop_full.isEnabled(),
-      'full desktop must be available again online')
-check('switching back online leaves the desktop choice alone',
-      wizard3.rb_desktop_full.isChecked(),
-      'the previously chosen variant must not be reset')
-
-wizard3.rb_mode_offline.setChecked(True)
-wizard3.rb_mode_online.setChecked(False)
-app.processEvents()
-check('going offline again reverts to the minimal desktop',
-      wizard3.rb_desktop_minimal.isChecked(),
-      'minimal must be selected while offline')
+check('no internet blocks the install',
+      not wizard3._next_welcome.isEnabled(),
+      'Next must be disabled when the probe fails')
+check('no internet explains why',
+      wizard3.net_label.text() == wizard3.t['net_missing_blocked'],
+      repr(wizard3.net_label.text()))
+check('the internet check is reported as failed',
+      wizard3.req_table.item(1, 1).text() == wizard3.t['req_fail'],
+      'the requirements table must show the internet check failing')
 
 oi.network_online = lambda: True
 wizard4 = oi.Wizard()
 wizard4._probe_network()
-check('with internet online stays preselected',
-      wizard4.rb_mode_online.isChecked(),
-      'online should stay selected when the probe succeeds')
-check('online keeps the full desktop available',
+check('with internet the install is allowed',
+      wizard4._next_welcome.isEnabled(),
+      'Next must be enabled when the probe succeeds')
+check('with internet the check passes',
+      wizard4.req_table.item(1, 1).text() == wizard4.t['req_ok'],
+      'the requirements table must show the internet check passing')
+
+# Both desktop variants stay selectable: there is no offline mode to
+# constrain them any more.
+check('the full desktop is selectable',
       wizard4.rb_desktop_full.isEnabled(),
-      'full desktop must be selectable online')
+      'the full desktop must not be restricted')
+check('the full desktop is the default',
+      wizard4.rb_desktop_full.isChecked(),
+      'full desktop should be preselected as the recommended option')
 
 # --- the plan must not carry a display string ------------------------------
 wizard2._confirm = lambda msg: True
