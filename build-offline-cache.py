@@ -48,6 +48,15 @@ DESKTOP_PACKAGES = [
     'plasma',
 ]
 
+# Optional dependencies that matter enough to bundle. pacman will not install
+# an optdepend on its own, so they are named explicitly; without them an
+# offline desktop would miss krunner package installation and Wayland support
+# for Qt5 applications.
+WANTED_OPTIONAL = [
+    'packagekit-qt6',     # krunner can install software
+    'kwayland-integration',  # Qt5 apps behave properly on Wayland
+]
+
 WANTED = BASE_PACKAGES + (DESKTOP_PACKAGES if MODE == 'desktop' else [])
 
 PKG_RE = re.compile(r'^(.+?)-(\d[^-]*(?:-[^-]+)?)-(?:x86_64|any)\.pkg\.tar\.zst$')
@@ -119,10 +128,12 @@ def resolve_closure(index: dict, meta: dict, providers: dict, roots: list):
         seen.add(name)
         if name in meta:
             stack.extend(meta[name]['deps'])
-            # A working desktop needs these optional recommends too.
-            if name in ('plasma', 'plasma-desktop', 'plasma-workspace',
-                        'sddm', 'kwin', 'kwayland'):
-                stack.extend(meta[name]['opt'])
+            # Only the optional dependencies we deliberately want are followed.
+            # Walking every optdepend made the cache demand six packages that
+            # pacman considers optional and never installs on its own, so the
+            # build failed on packages nothing actually required.
+            stack.extend(o for o in meta[name]['opt']
+                         if o in WANTED_OPTIONAL)
         elif name in providers:
             stack.extend(providers[name])
         else:
@@ -131,7 +142,10 @@ def resolve_closure(index: dict, meta: dict, providers: dict, roots: list):
 
 
 def fetch(packages: list) -> None:
-    """Download packages into the host cache (needs a network)."""
+    """Download packages into the host cache (needs a network).
+
+    Returns quietly on success; raises CalledProcessError-like dict otherwise.
+    """
     if not packages:
         return
     print(f"==> Downloading {len(packages)} packages into the host cache")
@@ -140,16 +154,71 @@ def fetch(packages: list) -> None:
         ['pacman', '-Syw', '--noconfirm', '--needed', *packages],
         capture_output=True, text=True)
     if proc.returncode != 0:
-        # pacman needs write access to the cache and the sync databases, and
-        # downloads as DownloadUser when one is configured. Without root it
-        # fails with a message that says nothing about which package list
-        # caused it, so surface the cause here instead.
         detail = (proc.stderr or proc.stdout).strip().splitlines()
         reason = detail[-1] if detail else f'exit {proc.returncode}'
-        sys.exit(
-            f'Could not download {len(packages)} packages: {reason}\n'
-            'pacman needs root to write to the package cache (try: sudo '
-            'python3 build-offline-cache.py).')
+        raise RuntimeError(reason)
+
+
+def is_ours(name: str) -> bool:
+    """Our packages come from the [orinos] repository, not from Arch."""
+    return name.startswith('orinos-')
+
+
+def load_cache(cache: Path):
+    """Index the cache and resolve the full closure for this mode."""
+    index = index_cache(cache)
+    meta, providers = {}, {}
+    for name, paths in index.items():
+        info = read_pkginfo(paths[0])
+        meta[name] = info
+        for provided in info['provides']:
+            providers.setdefault(provided, []).append(name)
+    # plasma is a group, not a package: expand it the way pacman would.
+    roots = sorted((set(WANTED) | set(group_members('plasma'))
+                | (set(WANTED_OPTIONAL) if MODE == 'desktop' else set()))
+               # 'plasma' names a group, not a package: pacman installs the
+               # members, so following the name itself would look for a file
+               # that never exists.
+               - {'plasma'})
+    seen, unresolved = resolve_closure(index, meta, providers, roots)
+    return index, seen, unresolved
+
+
+def fetch_until_complete(cache: Path) -> set:
+    """Download until the closure is satisfied.
+
+    One pass is not enough: fetching a package exposes its metadata, which can
+    reveal dependencies that were not reachable before. A stock Arch host
+    configures DownloadUser, so every download needs root, and a single
+    unprivileged attempt would leave the later rounds failing. Callers handle
+    privilege; this only reports what is still missing at the end.
+    """
+    for round_number in range(1, 11):
+        _, _, unresolved = load_cache(cache)
+        wanted = sorted(n for n in unresolved if not is_ours(n))
+        if not wanted:
+            print('==> All packages present')
+            return set()
+
+        try:
+            fetch(wanted)
+        except RuntimeError as exc:
+            if os.geteuid() != 0:
+                # The caller retries the whole script under sudo; say so
+                # rather than looping on the same permission error.
+                sys.exit(
+                    f'Could not download {len(wanted)} packages: {exc}\n'
+                    'pacman needs root to write to the package cache; re-run '
+                    'this script with sudo.')
+            raise
+
+        # Re-resolve before the next round so newly reachable dependencies are
+        # picked up rather than silently left out of the cache.
+        print(f"==> Round {round_number}: downloaded {len(wanted)} packages")
+
+    _, _, unresolved = load_cache(cache)
+    missing = sorted(n for n in unresolved if not is_ours(n))
+    sys.exit('download did not converge; still missing: ' + ', '.join(missing))
 
 
 def main() -> int:
@@ -158,50 +227,13 @@ def main() -> int:
         sys.exit(f"pacman cache not found at {cache}")
     print(f"==> Host cache: {cache}")
 
-    index = index_cache(cache)
-    meta, providers = {}, {}
-    for name, paths in index.items():
-        info = read_pkginfo(paths[0])
-        meta[name] = info
-        for provided in info['provides']:
-            providers.setdefault(provided, []).append(name)
-
-    # plasma is a group, not a package: expand it the way pacman would.
-    roots = sorted(set(WANTED) | set(group_members('plasma')))
-
-    seen, unresolved = resolve_closure(index, meta, providers, roots)
-
-    # The OrinOs packages live in our own repo and are embedded separately by
-    # build-iso.sh, so they are not expected in the Arch cache.
-    def is_ours(name):
-        return name.startswith('orinos-')
-
-    # Anything reachable but absent from the cache has to be fetched, because
-    # a stale cache would otherwise produce an ISO that cannot install.
-    fetch(sorted(n for n in unresolved if not is_ours(n)))
+    fetch_until_complete(cache)
 
     if FETCH_ONLY:
-        # First half of a split run (build-iso.sh calls it without root, then
-        # with root, then runs this again to collect the files). Resolving the
-        # closure again here is what lets the second run see the newly fetched
-        # packages, whose own dependencies may pull in further files.
-        if not any(index_cache(cache).get(n) for n in unresolved):
-            missing = sorted(n for n in unresolved if not is_ours(n))
-            sys.exit('download failed; still missing: ' + ', '.join(missing))
         print('==> Fetch complete')
         return 0
 
-    # Re-index: fetching added packages, which may bring in new dependencies
-    # of their own that were not in the closure before.
-    index = index_cache(cache)
-    meta, providers = {}, {}
-    for name, paths in index.items():
-        info = read_pkginfo(paths[0])
-        meta[name] = info
-        for provided in info['provides']:
-            providers.setdefault(provided, []).append(name)
-    seen, unresolved = resolve_closure(index, meta, providers, roots)
-
+    index, seen, unresolved = load_cache(cache)
     missing = sorted(n for n in unresolved if not is_ours(n))
     print(f"==> Closure: {len(seen)} packages "
           f"({len(missing)} still not in the host cache)")

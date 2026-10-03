@@ -74,10 +74,11 @@ cp "${REPO_ROOT}/packages/os/x86_64/orinos.db.tar.gz" "${EMBED_DIR}/x86_64/"
 # packages of its own unless they are embedded here. The cache has to be built
 # before the profile is assembled, because it lives inside the profile tree.
 #
-# Fetching needs write access to /var/cache/pacman/pkg, which on a stock
-# Arch host means root; copying the files out of that cache needs none. The
-# fetch step is therefore retried under sudo, and only the collect step runs
-# unprivileged.
+# One privileged run is enough: build-offline-cache.py loops until the whole
+# closure is satisfied, so newly discovered dependencies do not need a second
+# escalation. Fetching needs write access to /var/cache/pacman/pkg, which on a
+# stock Arch host means root; copying the files out of that cache needs none,
+# which is why the collect step runs unprivileged afterwards.
 if ! "${REPO_ROOT}/build-offline-cache.py" --fetch-only "${MODE}"; then
     echo "==> Retrying the download with sudo"
     sudo "${REPO_ROOT}/build-offline-cache.py" --fetch-only "${MODE}" || {
