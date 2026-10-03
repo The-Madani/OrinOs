@@ -34,6 +34,7 @@ pacman.conf keeps consuming the [orinos] repository after reboot.
 """
 
 import json
+import os
 import shlex
 import shutil
 import subprocess
@@ -366,6 +367,11 @@ def main() -> None:
         print(__doc__)
         sys.exit(1)
 
+    # The very first thing a user sees if something is wrong is this banner,
+    # so say who is running and what is available before anything else.
+    print(f'OrinOs installer backend starting '
+          f'(uid={os.geteuid()}, python={sys.version.split()[0]})', flush=True)
+
     plan = load_plan(Path(sys.argv[1]))
     repo_url = plan['repo_url']
     mountpoint = Path('/mnt')
@@ -618,4 +624,17 @@ def verify_install(plan: dict, mountpoint: Path, firmware: str) -> None:
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print('\nInterrupted by the user.', file=sys.stderr)
+        sys.exit(130)
+    except Exception:
+        # The traceback is the only thing that says why a run stopped, and a
+        # failure with no output is indistinguishable from a success in the
+        # log the user is asked to read. Print it in full and exit non-zero.
+        import traceback
+        traceback.print_exc()
+        print('\nThe installation failed. Nothing further was attempted.',
+              file=sys.stderr)
+        sys.exit(1)

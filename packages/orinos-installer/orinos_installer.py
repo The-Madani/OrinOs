@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 
 from PySide6.QtCore import Qt, QTimer, QObject, Signal, QProcess
 from PySide6.QtGui import QFont, QIcon, QPixmap
@@ -344,6 +345,7 @@ LANGUAGES = {
                      'start your new system.',
         'release_notes': 'Show release notes after reboot',
         'reboot': 'Reboot now',
+        'copy_log': 'Copy log',
         'quit': 'Quit installer',
         'error': 'Error',
         'warning': 'Warning',
@@ -516,6 +518,7 @@ LANGUAGES = {
                      'برای ورود به سیستم جدید بزنید.',
         'release_notes': 'نمایش یادداشت انتشار پس از راه‌اندازی',
         'reboot': 'راه‌اندازی دوباره',
+        'copy_log': 'کپی لاگ',
         'quit': 'خروج از نصاب',
         'error': 'خطا',
         'warning': 'هشدار',
@@ -776,6 +779,19 @@ class InstallWorker(QObject):
             self.proc = subprocess.Popen(
                 self.cmd, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, text=True, bufsize=1)
+        except FileNotFoundError as exc:
+            # The interpreter or the backend is missing; say which, because
+            # the alternative is a run that "completes" with no explanation.
+            self.log.emit(f'Cannot run {self.cmd[0]}: {exc}')
+            self.log.emit('The backend was not found next to the frontend.')
+            self.finished.emit(1)
+            return
+        except Exception as exc:                       # noqa: BLE001
+            self.log.emit(f'Launch failed: {exc!r}')
+            self.finished.emit(1)
+            return
+
+        try:
             assert self.proc.stdout is not None
             for line in self.proc.stdout:
                 line = line.rstrip()
@@ -783,10 +799,9 @@ class InstallWorker(QObject):
                     self.stage.emit(line.split(']', 1)[1].strip())
                 else:
                     self.log.emit(line)
-            self.finished.emit(self.proc.wait())
         except Exception as exc:                       # noqa: BLE001
-            self.log.emit(f'launch failed: {exc}')
-            self.finished.emit(1)
+            self.log.emit(f'Lost contact with the backend: {exc!r}')
+        self.finished.emit(self.proc.wait())
 
     def cancel(self):
         if self.proc and self.proc.poll() is None:
@@ -896,6 +911,7 @@ class Wizard(QWidget):
         self.root_password = ''
         self.worker = None
         self._plan_file = None
+        self.log_path = None
         self.stack = QStackedWidget()
         self.pages = {}
         self.page_titles = {}
@@ -1974,16 +1990,57 @@ class Wizard(QWidget):
             self.worker.cancel()
             self.log_view.appendPlainText('cancelled by user')
 
+    def _save_log(self, code):
+        """Write the run's transcript next to the log the launcher keeps.
+
+        A run that fails in seconds gives nothing to work with while it is on
+        screen, and the on-screen log is capped at a few thousand lines. The
+        file is left in place deliberately: it is the only evidence of what
+        the backend did, and it costs a few kilobytes.
+        """
+        path = f'/tmp/orinos-install-log-{int(time.time())}.txt'
+        header = [
+            f'=== OrinOs installer run ===',
+            f'exit code : {code}',
+            f'timestamp : {time.strftime("%Y-%m-%d %H:%M:%S")}',
+            f'plan file : {self._plan_file}',
+            '',
+            '--- plan ---',
+        ]
+        try:
+            with open(self._plan_file or os.devnull) as fh:
+                # The plan carries the user's password; it is not written out.
+                plan = json.load(fh)
+                plan.pop('password', None)
+                plan.pop('root_password', None)
+                if 'encryption' in plan:
+                    plan['encryption'] = {'password': '<redacted>'}
+                header.append(json.dumps(plan, indent=2))
+        except (OSError, ValueError):
+            header.append('(plan unavailable)')
+        header += ['', '--- transcript ---']
+
+        try:
+            with open(path, 'w') as fh:
+                fh.write('\n'.join(header))
+                fh.write(self.log_view.toPlainText())
+                fh.write('\n')
+        except OSError:
+            return
+
+        self.log_path = path
+        self.log_view.appendPlainText(
+            f'\nLog saved to {path}')
+
     def _on_finished(self, code):
         self.install_ok = code == 0
         self.cancel_btn.setEnabled(False)
         if self.install_ok:
             self.progress_bar.setValue(100)
             self.stage_label.setText(self.t['done_title'])
-        try:
-            os.unlink(self._plan_file)
-        except (OSError, AttributeError):
-            pass
+        # Keep the plan and the transcript: the backend deletes its input on
+        # success, and a run that failed in seconds needs something to read.
+        self._save_log(code)
         if code == 2:
             # Backend refused before writing anything (exit code 2 = a
             # pre-flight safety check). Nothing was changed, so going back to
@@ -2021,14 +2078,30 @@ class Wizard(QWidget):
         row = QHBoxLayout()
         quit_btn = QPushButton(self.t['quit'])
         quit_btn.clicked.connect(QApplication.quit)
+        # A failed run has to be reportable: without this the only evidence is
+        # a transcript that scrolls past in seconds.
+        self.copy_log_btn = QPushButton(self.t['copy_log'])
+        self.copy_log_btn.clicked.connect(self.copy_log)
         reboot = QPushButton(self.t['reboot'])
         reboot.setObjectName('primary')
         reboot.setMinimumWidth(160)
         reboot.clicked.connect(self.reboot_now)
+        row.addWidget(self.copy_log_btn)
         row.addWidget(quit_btn)
         row.addStretch()
         row.addWidget(reboot)
         layout.addLayout(row)
+
+    def copy_log(self):
+        """Put the run's log on the clipboard so it can be pasted anywhere."""
+        if self.log_path and os.path.isfile(self.log_path):
+            text = self.log_view.toPlainText()
+        else:
+            text = self.log_view.toPlainText()
+        QApplication.clipboard().setText(text)
+        if self.log_path:
+            self.copy_log_btn.setText(
+                f'{self.t["copy_log"]}: {self.log_path}')
 
     def reboot_now(self):
         # Finished page offers an explicit confirm (the checkbox is the
